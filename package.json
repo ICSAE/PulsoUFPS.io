@@ -1,0 +1,18 @@
+{
+  "name": "pulso-ufps",
+  "private": true,
+  "type": "module",
+  "description": "Pulso – asistencia docente del Departamento de Electricidad y Electrónica (UFPS): enlace personal + verificación de red WiFi. Apps Script + Cloudflare Worker, desplegado desde GitHub Actions.",
+  "scripts": {
+    "build": "node worker/build.mjs",
+    "test": "npm run build && node test/e2e.mjs",
+    "desplegar:apps-script": "node scripts/desplegar-apps-script.mjs",
+    "hoja": "python3 herramientas/generar_hoja.py"
+  },
+  "engines": { "node": ">=20" },
+  "devDependencies": {
+    "@google/clasp": "3.4.1",
+    "playwright": "1.56.0",
+    "wrangler": "4.151.1"
+  }
+}

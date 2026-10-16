@@ -1,0 +1,6 @@
+# Cloudflare Worker – Pulso · Asistencia docente UFPS
+# Las variables APPS_SCRIPT_URL y SECRETO las carga el workflow "Desplegar" como secretos.
+name = "pulso-ufps"
+main = "dist/worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true

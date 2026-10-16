@@ -1,0 +1,9 @@
+node_modules/
+worker/dist/
+test/.worker.mjs
+.clasp.json
+.clasprc.json
+apps-script/zz_secreto.gs
+deploy.log
+.wrangler/
+__pycache__/
