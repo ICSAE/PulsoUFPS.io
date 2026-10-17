@@ -44,8 +44,17 @@ read -rsp "API Token (no se muestra): " CF_TOKEN; echo
 secreto CLOUDFLARE_ACCOUNT_ID "$CF_ACCOUNT"
 secreto CLOUDFLARE_API_TOKEN "$CF_TOKEN"
 
+azul "Activando GitHub Pages (index.html)"
+if env -u GITHUB_TOKEN gh api -X POST "repos/$REPO/pages" -f build_type=workflow >/dev/null 2>&1 \
+   || env -u GITHUB_TOKEN gh api -X PUT "repos/$REPO/pages" -f build_type=workflow >/dev/null 2>&1; then
+  ok "GitHub Pages publicará desde GitHub Actions"
+else
+  echo "No se pudo activar automáticamente. Hazlo en: Settings → Pages → Source: GitHub Actions"
+  echo "(En cuentas gratuitas GitHub Pages exige que el repositorio sea público; con GitHub Education/Pro puede ser privado.)"
+fi
+
 rm -f "$HOME/.clasprc.json"
 azul "Listo. Lanzando el despliegue…"
 env -u GITHUB_TOKEN gh workflow run desplegar.yml --repo "$REPO" && ok "Workflow 'Desplegar' iniciado"
 echo "Míralo en: https://github.com/$REPO/actions"
-echo "Al terminar, el resumen muestra la URL del Worker para pegarla en la hoja (Config)."
+echo "Al terminar, el resumen muestra la URL de la página (GitHub Pages) para pegarla en la hoja (Config)."

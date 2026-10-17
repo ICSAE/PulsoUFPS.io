@@ -36,7 +36,7 @@ const now = new Date(), hoy = DIAS[Number(formatDate(now, TZ, 'u')) - 1];
 const hm = m => ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2);
 const nowMin = (() => { const [h, m] = formatDate(now, TZ, 'HH:mm').split(':').map(Number); return h * 60 + m; })();
 const ini = hm(Math.max(0, nowMin - 3)), fin = hm(Math.min(1439, nowMin + 60));
-const prueba = { '06667': 'AG101', '07784': 'AG102', '07428': 'LG107', '05497': 'AG103', '04068': 'AG104' };
+const prueba = { '06667': 'AG101', '07784': 'AG102', '07428': 'LG107', '05497': 'AG103', '04068': 'AG104', '01243': 'LE103' };
 const docs = [...new Map(horario.map(r => [r.cd, r.nom]))];
 const sinClaseHoy = docs.find(([c]) => !prueba[c] && !horario.some(r => r.cd === c && r.dia === hoy))[0];
 const TOKEN = Object.fromEntries(docs.map(([c]) => [c, crypto.randomBytes(16).toString('hex')]));
@@ -108,6 +108,17 @@ const cfw = http.createServer(async (req, res) => {
   res.writeHead(r.status, Object.fromEntries(r.headers)); res.end(Buffer.from(await r.arrayBuffer()));
 });
 
+// "GitHub Pages" (puerto 8792): sirve dist-pagina/ en otro dominio y apunta a la API del Worker
+const DIST = path.join(ROOT, 'dist-pagina');
+const pages = http.createServer((req, res) => {
+  let ruta = decodeURIComponent(req.url.split('?')[0]).replace(/^\/pulso-ufps\/?/, '') || 'index.html';
+  if (ruta === 'config.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end("window.PULSO_API = 'http://localhost:8791/api';"); }
+  const f = path.join(DIST, ruta);
+  if (!f.startsWith(DIST) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); }
+  const tipo = { html: 'text/html; charset=utf-8', js: 'application/javascript', png: 'image/png', webmanifest: 'application/manifest+json' }[f.split('.').pop()];
+  res.writeHead(200, { 'Content-Type': tipo || 'application/octet-stream' }); res.end(fs.readFileSync(f));
+});
+
 // ---------- Utilidades ----------
 let fallas = 0;
 const check = (n, c, x) => { if (!c) fallas++; console.log((c ? 'OK   ' : 'FALLA') + ' ' + n + (x ? '  → ' + x : '')); };
@@ -120,8 +131,9 @@ async function celular(browser, { geo = UFPS, accuracy = 20, jitter = true, perm
   if (jitter) await c.addInitScript(JITTER);
   return c;
 }
+let BASE = 'http://localhost:8791/';
 async function abrir(page, codigo) {
-  await page.goto('http://localhost:8791/?d=' + (TOKEN[codigo] || codigo));
+  await page.goto(BASE + '?d=' + (TOKEN[codigo] || codigo));
   await page.waitForFunction(() => document.getElementById('resInicial').className.includes('res ') || !document.getElementById('clase').classList.contains('oculto'), null, { timeout: 20000 });
   return page.evaluate(() => ({ inicial: document.getElementById('resInicial').className.includes('res ') ? document.getElementById('resInicial').innerText : '',
     hola: document.getElementById('hola').innerText, clase: document.getElementById('clase').innerText, flujo: !document.getElementById('flujo').classList.contains('oculto') }));
@@ -139,7 +151,7 @@ async function registrar(page, codigo) {
 }
 const fila = cd => sheets.Asistencia.data.find(f => f[7] === cd && String(f[2]).startsWith('TEST'));
 
-await new Promise(r => gas.listen(8790, r)); await new Promise(r => cfw.listen(8791, r));
+await new Promise(r => gas.listen(8790, r)); await new Promise(r => cfw.listen(8791, r)); await new Promise(r => pages.listen(8792, r));
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 console.log('Hoy ' + hoy + ', clases de prueba ' + ini + '–' + fin + '\n');
 
@@ -221,6 +233,23 @@ const e10 = await abrir(p10, sinClaseHoy);
 if (process.env.CAPTURAS) await p10.screenshot({ path: process.env.CAPTURAS + '/sin_clase.png', fullPage: true });
 check('Docente sin clase ahora: no aparece el botón de registro', !e10.flujo && /No tienes más clases|próxima/i.test(e10.clase), e10.clase.replace(/\n/g, ' '));
 
+// 10b. Página publicada en GitHub Pages (index.html en otro dominio) → API del Worker por CORS
+BASE = 'http://localhost:8792/pulso-ufps/';
+const pPages = await (await celular(browser)).newPage();
+const rP = await registrar(pPages, '01243');
+const logosP = await pPages.evaluate(() => [...document.images].filter(i => /assets/.test(i.src)).every(i => i.naturalWidth > 0));
+check('GitHub Pages: index.html registra a través del Worker (CORS)', /registrada/.test(rP.texto) && logosP, rP.texto.split('\n')[0]);
+const pre = await fetch('http://localhost:8791/api', { method: 'OPTIONS', headers: { Origin: 'http://localhost:8792' } });
+check('Worker responde la verificación CORS', pre.status === 204 && pre.headers.get('access-control-allow-origin'));
+if (process.env.CAPTURAS) await pPages.screenshot({ path: process.env.CAPTURAS + '/pages.png', fullPage: true });
+// config.js del repositorio sin editar (GitHub Pages "desde la rama" sin configurar) → aviso claro
+const pSin = await (await celular(browser)).newPage();
+await pSin.route('**/config.js', r => r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8') }));
+await pSin.goto(BASE + '?d=' + TOKEN['01243']);
+await pSin.waitForFunction(() => document.getElementById('resInicial').className.includes('res '));
+check('index.html sin configurar muestra aviso claro', /sin configurar/i.test(await pSin.$eval('#resInicial', e => e.innerText)));
+BASE = 'http://localhost:8791/';
+
 // 11. Aprendizaje de redes
 ctx.detectarRedes();
 const redUfps = sheets.Redes.data.find(f => f[0] === '200.21.5.0/24');
@@ -230,5 +259,5 @@ check('Redes: la conexión con GPS sospechoso no se aprende', !redCasa);
 
 console.log('\nRegistros: ' + (sheets.Registros.data.length - 1) + ' · Asistencia: ' + (sheets.Asistencia.data.length - 1) + ' · Correos: ' + mails.length);
 console.log(fallas ? '\n' + fallas + ' FALLAS' : '\nTODAS LAS PRUEBAS OK');
-await browser.close(); gas.close(); cfw.close();
+await browser.close(); gas.close(); cfw.close(); pages.close();
 process.exit(fallas ? 1 : 0);

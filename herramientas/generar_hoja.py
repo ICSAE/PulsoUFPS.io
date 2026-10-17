@@ -92,7 +92,7 @@ pasos = [
     ("2", "En la hoja: Extensiones → Apps Script → engranaje (Configuración del proyecto) → copia el “ID de la secuencia de comandos”. Ese es el SCRIPT_ID para GitHub."),
     ("3", "Sigue el README del repositorio: el workflow “Desplegar” de GitHub sube el código a Apps Script y a Cloudflare automáticamente."),
     ("4", "Después del primer despliegue: recarga esta hoja → menú Pulso · Asistencia → 1. Autorizar y verificar instalación (acepta los permisos)."),
-    ("5", "En Config pega la “URL del Worker” que aparece en el resumen del workflow en GitHub, tu correo y las fechas. Llena la columna Correo en Docentes."),
+    ("5", "En Config pega la “URL de la página (GitHub Pages)” que aparece en el resumen del workflow en GitHub, tu correo y las fechas. Llena la columna Correo en Docentes."),
     ("6", "Menú → 2. Generar enlaces → 3. Enviar enlaces → 4. Activar automatización."),
     ("•", "Cambios futuros al código: se hacen en GitHub. Cada cambio en la rama main se prueba y se despliega solo; la URL no cambia."),
     ("ACTIVAR LA RED WIFI (semanas 1–2)", None),
@@ -122,7 +122,8 @@ for a, b in pasos:
 wc = wb.create_sheet("Config")
 header(wc, ["Parámetro", "Valor", "Nota"], [42, 36, 84])
 cfg = [
-    ("URL del Worker", "", "Aparece en el resumen del workflow Desplegar en GitHub (ej. https://pulso-ufps.tu-usuario.workers.dev)."),
+    ("URL de la página (GitHub Pages)", "", "Dirección de la página del docente (index.html). Aparece en el resumen del workflow Desplegar (ej. https://usuario.github.io/pulso-ufps/)."),
+    ("URL del Worker", "", "Opcional: puente de Cloudflare (ej. https://pulso-ufps.tu-usuario.workers.dev). Se usa si no hay URL de GitHub Pages."),
     ("Correo del coordinador", "", "Alertas y reporte diario. Varios correos separados por coma."),
     ("Validación de red WiFi (NO/ALERTA/EXIGIR)", "ALERTA", "ALERTA las primeras semanas mientras apruebas la red en la hoja Redes; luego EXIGIR."),
     ("Latitud del campus", 7.898115, "UFPS sede principal, Av. Gran Colombia 12E-96 (Google Maps)."),

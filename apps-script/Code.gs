@@ -420,7 +420,7 @@ function reporteDiario() {
 function verificarInstalacion() {
   var cfg = leerConfig_(), faltan = [];
   if (!secretoWorker_()) faltan.push('Secreto del Worker (vuelve a ejecutar el workflow "Desplegar" en GitHub)');
-  if (!cfg.urlWorker) faltan.push('Config → "URL del Worker" (aparece en el resumen del workflow en GitHub)');
+  if (!cfg.urlPagina && !cfg.urlWorker) faltan.push('Config → "URL de la página (GitHub Pages)" (aparece en el resumen del workflow en GitHub)');
   if (!cfg.correo) faltan.push('Config → "Correo del coordinador"');
   var sinCorreo = hoja_('Docentes').getDataRange().getDisplayValues().slice(1).filter(function (f) { return f[0] && !f[3]; }).length;
   if (sinCorreo) faltan.push(sinCorreo + ' docentes sin correo en la hoja Docentes');
@@ -430,13 +430,14 @@ function verificarInstalacion() {
 
 function generarEnlaces() {
   var cfg = leerConfig_();
-  if (!cfg.urlWorker) throw new Error('Escribe primero en Config la "URL del Worker".');
+  var base = basePagina_(cfg);
+  if (!base) throw new Error('Escribe primero en Config la "URL de la página (GitHub Pages)".');
   var sh = hoja_('Docentes'), n = sh.getLastRow() - 1;
   if (n < 1) return;
   var v = sh.getRange(2, 1, n, 8).getDisplayValues();
   var tokens = v.map(function (f) { return [f[5] || (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 32)]; });
   sh.getRange(2, 6, n, 1).setNumberFormat('@').setValues(tokens);
-  sh.getRange(2, 8, n, 1).setValues(tokens.map(function (t) { return [cfg.urlWorker.replace(/\/$/, '') + '/?d=' + t[0]]; }));
+  sh.getRange(2, 8, n, 1).setValues(tokens.map(function (t) { return [base + '/?d=' + t[0]]; }));
   avisar_('Enlaces generados (columna H). Envíalos con la opción 3 o compártelos uno a uno. Mantén la hoja privada.');
 }
 
@@ -464,6 +465,11 @@ function activarAutomatizacion() {
   avisar_('Automatización activada: conciliación cada 15 min y reporte diario hacia las 10:30 p. m.');
 }
 
+/** Dirección pública de la página del docente: GitHub Pages (preferida) o el Worker. Sin "/" final. */
+function basePagina_(cfg) {
+  return String(cfg.urlPagina || cfg.urlWorker || '').trim().replace(/\/+$/, '').replace(/\/index\.html$/, '');
+}
+
 // ---------------------------------------------------------------------------
 // LECTURA / ESCRITURA
 // ---------------------------------------------------------------------------
@@ -478,6 +484,7 @@ function leerConfig_() {
   return {
     tz: Session.getScriptTimeZone() || 'America/Bogota',
     urlWorker: String(m['URL del Worker'] || '').trim(),
+    urlPagina: String(m['URL de la página (GitHub Pages)'] || '').trim(),
     correo: String(m['Correo del coordinador'] || '').trim(),
     modoRed: ['NO', 'ALERTA', 'EXIGIR'].indexOf(modo) >= 0 ? modo : 'ALERTA',
     lat: num('Latitud del campus', 7.898115), lng: num('Longitud del campus', -72.488703),
@@ -600,7 +607,7 @@ var COLORES_UFPS = { rojo: '#E2031A', negro: '#111111', naranja: '#FF9900', verd
 
 function enviarCorreo_(para, asunto, texto) {
   var base = '';
-  try { base = leerConfig_().urlWorker.replace(/\/$/, ''); } catch (e) { /* sin config */ }
+  try { base = basePagina_(leerConfig_()); } catch (e) { /* sin config */ }
   MailApp.sendEmail(para, asunto, texto, { name: 'Pulso · Asistencia docente UFPS', htmlBody: correoHtml_(asunto, texto, base) });
 }
 

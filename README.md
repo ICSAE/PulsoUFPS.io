@@ -5,13 +5,16 @@ En electrónica, un *pulso* es la señal que marca que algo ocurrió: cada regis
 Cada docente abre **su enlace personal** en el salón, conectado al **WiFi de la universidad**, y toca *Registrar*.
 Sin pantallas, sin personal en los salones.
 
-Todo se ejecuta desde este repositorio: cada cambio en `main` se **prueba** y se **despliega solo** en Google Apps Script y Cloudflare.
+Todo se ejecuta desde este repositorio: cada cambio en `main` se **prueba** y se **despliega solo** en GitHub Pages, Cloudflare y Google Apps Script.
 
 ```
-Celular del docente ──► Cloudflare Worker ──(IP real + firma)──► Apps Script ──► Google Sheets
-   (enlace personal)     (página + proxy)                         (validación)     (horario, registros,
-                                                                                    asistencia, reportes)
+GitHub Pages            Cloudflare Worker              Apps Script        Google Sheets
+index.html        ──► /api (agrega IP real ──► valida enlace, red, ──► horario, registros,
+(enlace personal)         + firma HMAC)          GPS y horario           asistencia, reportes
 ```
+
+- **`index.html`** (en la raíz) es la página de inicio: GitHub Pages la publica en `https://<usuario>.github.io/<repositorio>/`, y cada docente la abre con su enlace `…/?d=<clave>`.
+- El **Worker** es solo el puente: GitHub Pages no puede ver la IP de la conexión, el Worker sí, y es lo que permite exigir el WiFi de la universidad. (El Worker también sirve una copia de la página como respaldo.)
 
 ## Qué valida cada registro
 
@@ -37,17 +40,21 @@ Celular del docente ──► Cloudflare Worker ──(IP real + firma)──►
 - **Ícono del celular**: al agregarla a la pantalla de inicio aparece como **Pulso UFPS** con el logo UFPS (`/manifest.webmanifest`).
 - **Correos** (enlaces, alertas, reporte diario): mismo encabezado y franja tricolor.
 - **Hoja**: encabezados rojos, logos, franja de la bandera, pestañas de color y semáforo de cumplimiento.
-- Logos originales en `marca/`; versiones optimizadas para la web en `worker/src/assets/` (se incrustan en el Worker al compilar).
+- Logos originales en `marca/`; versiones optimizadas para la web en `assets/`.
 
 ## Estructura
 
 ```
 apps-script/          Servidor (Code.gs + appsscript.json) → se sube con clasp
 marca/                Logos UFPS, Ingeniería Electrónica, Acreditado y bandera
-worker/               Cloudflare Worker: página del docente (src/registro.html) + proxy
+index.html            ★ Página del docente (la que abre GitHub Pages)
+config.js             Dirección del Worker (la escribe el workflow)
+manifest.webmanifest  Ícono y nombre en la pantalla de inicio del celular
+assets/               Logos e íconos optimizados
+worker/               Cloudflare Worker (puente API) + build.mjs (compila worker y dist-pagina/)
 hoja/                 Plantilla de la hoja de cálculo (subirla a Google Drive una vez)
 herramientas/         Datos del horario y generador de la hoja (python3 herramientas/generar_hoja.py)
-test/                 Prueba de punta a punta (21 casos, incluye ataques)
+test/                 Prueba de punta a punta (24 casos, incluye ataques y GitHub Pages)
 scripts/              configurar.sh (una vez, en Codespaces) y despliegue de Apps Script
 .github/workflows/    Pruebas y Desplegar
 ```
@@ -71,11 +78,16 @@ scripts/              configurar.sh (una vez, en Codespaces) y despliegue de App
    bash scripts/configurar.sh
    ```
    El script te guía: autoriza GitHub, inicia sesión en Google (copias y pegas una URL), te pide el ID de la hoja y los datos de Cloudflare, guarda los **5 secretos** del repositorio y lanza el despliegue.
-3. Cuando termine el workflow **Desplegar** (pestaña *Actions*), el resumen muestra la **URL del Worker**.
+   También activa **GitHub Pages** (*Settings → Pages → Source: **GitHub Actions***; si no puede, hazlo a mano).
+   - Recomendado **GitHub Actions**: publica solo la página y escribe `config.js` solo.
+   - Si eliges *Deploy from a branch* (`main` / root): también funciona, pero edita una vez `config.js` con la URL de tu Worker, y ten en cuenta que se publica todo el repositorio.
+3. Cuando termine el workflow **Desplegar** (pestaña *Actions*), el resumen muestra la **URL de la página** (GitHub Pages).
+
+> **GitHub Pages y repositorio privado:** en cuentas gratuitas Pages solo funciona con repositorios **públicos**. Con GitHub Pro (gratis para docentes con [GitHub Education](https://education.github.com/teachers)) el repositorio puede ser privado. Si lo haces público: no hay secretos en el código, pero sí los nombres y códigos de los docentes del horario (`herramientas/datos_horario.py`, `test/fixtures/` y `hoja/`); esos datos no dan acceso al sistema (se necesita la clave personal del enlace).
 
 ### 4. En la hoja
 1. Recarga la hoja → menú **Pulso · Asistencia → 1. Autorizar y verificar instalación** (acepta los permisos).
-2. En **Config** pega la *URL del Worker*, tu correo y las fechas del semestre. Llena la columna **Correo** en **Docentes**.
+2. En **Config** pega la *URL de la página (GitHub Pages)*, tu correo y las fechas del semestre. Llena la columna **Correo** en **Docentes**.
 3. Menú → **2. Generar enlaces personales** → **3. Enviar enlaces por correo** → **4. Activar automatización**.
 4. Vuelve a ejecutar **Desplegar** en GitHub (*Actions → Desplegar → Run workflow*): la prueba de humo debe salir ✅.
 

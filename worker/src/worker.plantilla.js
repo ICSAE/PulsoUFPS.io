@@ -1,36 +1,44 @@
 /**
  * CLOUDFLARE WORKER – Pulso · Asistencia docente UFPS
  *
- * Sirve la página del docente y reenvía cada solicitud al Apps Script agregando la IP REAL
+ * Puente entre la página del docente (GitHub Pages o este mismo Worker) y Apps Script:
+ * reenvía cada solicitud agregando la IP REAL
  * de la conexión (la que ve Cloudflare; el celular no puede cambiarla), firmada con un secreto.
  *
  * Variables del Worker (Settings → Variables and Secrets):
  *   APPS_SCRIPT_URL = URL de la aplicación web de Apps Script (termina en /exec)
  *   SECRETO         = el secreto WORKER_SECRETO del repositorio (lo carga el workflow)
+ *   ORIGEN_PAGINA   = (opcional) dominio de GitHub Pages permitido, ej. https://usuario.github.io
  */
-const HTML = __HTML__;
-const ASSETS = __ASSETS__; // logos e íconos UFPS en base64 (worker/src/assets)
+// Archivos de la carpeta pagina/ (index.html, config.js, manifest y logos), incrustados al compilar.
+const ARCHIVOS = __ARCHIVOS__;
+const TIPOS = { html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8', webmanifest: 'application/manifest+json', png: 'image/png' };
+const SEGURIDAD = {
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'permissions-policy': 'geolocation=(self), camera=(self), microphone=()'
+};
 
-const MANIFEST = JSON.stringify({
-  name: 'Pulso – Asistencia docente UFPS',
-  short_name: 'Pulso UFPS',
-  description: 'Asistencia docente del Departamento de Electricidad y Electrónica – UFPS',
-  display: 'standalone',
-  background_color: '#F5F5F7',
-  theme_color: '#E2031A',
-  lang: 'es-CO',
-  icons: [
-    { src: '/assets/icono-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-    { src: '/assets/icono-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
-  ]
-  // Sin start_url: el ícono abre la misma dirección (con el enlace personal) desde la que se instaló.
-});
+function archivo(ruta) {
+  const f = ARCHIVOS[ruta];
+  if (!f) return null;
+  const ext = ruta.split('.').pop();
+  const cuerpo = f.b64 ? Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0)) : f.texto;
+  return new Response(cuerpo, { headers: { 'content-type': TIPOS[ext] || 'application/octet-stream',
+    'cache-control': ext === 'png' ? 'public, max-age=604800' : 'no-store', 'x-frame-options': 'DENY', ...SEGURIDAD } });
+}
 
-function asset(nombre) {
-  const b64 = ASSETS[nombre];
-  if (!b64) return new Response('No encontrado', { status: 404 });
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  return new Response(bytes, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=604800' } });
+/** CORS: la página publicada en GitHub Pages llama a esta API desde otro dominio. */
+function cors(env, request) {
+  const permitido = env.ORIGEN_PAGINA || '*';
+  const origen = request.headers.get('Origin') || '';
+  return {
+    'access-control-allow-origin': permitido === '*' ? '*' : (origen === permitido ? origen : permitido),
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '86400',
+    vary: 'Origin'
+  };
 }
 
 const enc = new TextEncoder();
@@ -40,8 +48,8 @@ async function hmacHex(clave, msg) {
   const k = await crypto.subtle.importKey('raw', enc.encode(clave), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return hex(await crypto.subtle.sign('HMAC', k, enc.encode(msg)));
 }
-const json = (o, status = 200) => new Response(JSON.stringify(o), {
-  status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+const json = (o, status = 200, extra = {}) => new Response(JSON.stringify(o), {
+  status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra }
 });
 
 export default {
@@ -49,10 +57,12 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api') {
-      if (request.method !== 'POST') return json({ ok: false }, 405);
-      if (!env.APPS_SCRIPT_URL || !env.SECRETO) return json({ ok: false, tipo: 'error', titulo: 'Worker sin configurar', mensaje: 'Faltan APPS_SCRIPT_URL o SECRETO.' }, 500);
+      const c = cors(env, request);
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: c });
+      if (request.method !== 'POST') return json({ ok: false }, 405, c);
+      if (!env.APPS_SCRIPT_URL || !env.SECRETO) return json({ ok: false, tipo: 'error', titulo: 'Worker sin configurar', mensaje: 'Faltan APPS_SCRIPT_URL o SECRETO.' }, 500, c);
       const payload = await request.text();
-      if (payload.length > 2500000) return json({ ok: false, tipo: 'error', titulo: 'Solicitud demasiado grande', mensaje: '' }, 413);
+      if (payload.length > 2500000) return json({ ok: false, tipo: 'error', titulo: 'Solicitud demasiado grande', mensaje: '' }, 413, c);
       const cf = request.cf || {};
       const red = {
         ip: request.headers.get('CF-Connecting-IP') || '',
@@ -66,27 +76,15 @@ export default {
         const r = await fetch(env.APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ payload, red, firma }), redirect: 'follow' });
         const texto = await r.text();
         JSON.parse(texto);
-        return new Response(texto, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+        return new Response(texto, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...c } });
       } catch (e) {
-        return json({ ok: false, tipo: 'error', titulo: 'Servidor no disponible', mensaje: 'Inténtalo de nuevo en unos segundos.' }, 502);
+        return json({ ok: false, tipo: 'error', titulo: 'Servidor no disponible', mensaje: 'Inténtalo de nuevo en unos segundos.' }, 502, c);
       }
     }
 
-    if (url.pathname.startsWith('/assets/')) return asset(url.pathname.slice(8));
-    if (url.pathname === '/manifest.webmanifest') {
-      return new Response(MANIFEST, { headers: { 'content-type': 'application/manifest+json', 'cache-control': 'public, max-age=86400' } });
-    }
-    if (url.pathname === '/favicon.ico') return asset('icono-192.png');
-
-    return new Response(HTML, {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-        'referrer-policy': 'no-referrer',
-        'x-frame-options': 'DENY',
-        'x-content-type-options': 'nosniff',
-        'permissions-policy': 'geolocation=(self), camera=(self), microphone=()'
-      }
-    });
+    // Página del docente (la misma que publica GitHub Pages)
+    const ruta = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    if (ruta === 'favicon.ico') return archivo('assets/icono-192.png');
+    return archivo(ruta) || archivo('index.html');
   }
 };

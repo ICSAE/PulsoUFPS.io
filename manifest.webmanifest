@@ -1,0 +1,23 @@
+{
+  "name": "Pulso – Asistencia docente UFPS",
+  "short_name": "Pulso UFPS",
+  "description": "Asistencia docente del Departamento de Electricidad y Electrónica – UFPS",
+  "display": "standalone",
+  "background_color": "#F5F5F7",
+  "theme_color": "#E2031A",
+  "lang": "es-CO",
+  "icons": [
+    {
+      "src": "assets/icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

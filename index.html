@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#E2031A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pulso UFPS">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="assets/icono-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<title>Pulso · Asistencia docente UFPS</title>
+<style>
+  /* Identidad UFPS: rojo institucional + colores de la bandera (negro, naranja, verde) */
+  :root {
+    --rojo:#E2031A; --rojo-osc:#B80215; --rojo-claro:#FDECEE;
+    --negro:#111111; --naranja:#FF9900; --naranja-claro:#FFF4E0; --verde:#66CC33; --verde-txt:#2E7D17; --verde-claro:#EEF9E7;
+    --gris:#5B5E63; --gris-ufps:#909398; --borde:#E2E3E6; --fondo:#F5F5F7;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: Arial, Helvetica, sans-serif; background:var(--fondo); color:var(--negro); }
+  .wrap { max-width:460px; margin:0 auto; padding:16px; }
+  header { background:var(--rojo); color:#fff; border-radius:14px 14px 0 0; padding:14px 16px; display:flex; gap:12px; align-items:center; }
+  header img { width:54px; height:54px; display:block; flex:none; }
+  header .txt small { display:block; font-size:11px; opacity:.92; letter-spacing:.02em; line-height:1.3; }
+  header h1 { margin:3px 0 0; font-size:19px; line-height:1.2; }
+  .bandera { display:grid; grid-template-rows:5px 5px 5px; border-radius:0 0 14px 14px; overflow:hidden; }
+  .bandera i:nth-child(1) { background:var(--negro); } .bandera i:nth-child(2) { background:var(--naranja); } .bandera i:nth-child(3) { background:var(--verde); }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:14px; padding:14px 16px; margin-top:12px; }
+  .clase { border-top:4px solid var(--rojo); }
+  .clase .et { font-size:12px; color:var(--gris); text-transform:uppercase; letter-spacing:.05em; font-weight:bold; }
+  .clase .mat { font-size:17px; font-weight:bold; margin-top:4px; }
+  .clase .sub { font-size:14px; color:var(--gris); margin-top:2px; }
+  .clase .salon { font-size:30px; font-weight:bold; color:var(--rojo); margin-top:6px; letter-spacing:.02em; }
+  .chk { display:flex; gap:10px; align-items:flex-start; font-size:14px; padding:8px 0; line-height:1.4; }
+  .chk + .chk { border-top:1px solid #EEEFF1; }
+  .dot { width:12px; height:12px; border-radius:50%; margin-top:4px; flex:none; background:#C5C7CB; }
+  .dot.ok { background:var(--verde); } .dot.err { background:var(--rojo); } .dot.wait { background:var(--naranja); animation:p 1s infinite; }
+  @keyframes p { 50% { opacity:.3; } }
+  .ayuda { font-size:12.5px; color:var(--gris); line-height:1.45; margin:4px 0 6px 22px; display:none; }
+  video, img.foto { width:100%; border-radius:10px; background:var(--negro); display:block; margin-top:8px; }
+  video { transform:scaleX(-1); }
+  .btn { width:100%; margin-top:12px; padding:15px; font-size:17px; font-weight:bold; border:0; border-radius:12px; background:var(--rojo); color:#fff; cursor:pointer; font-family:inherit; box-shadow:0 2px 0 var(--rojo-osc); }
+  .btn:active { background:var(--rojo-osc); }
+  .btn:disabled { background:#B9BBBF; box-shadow:none; cursor:default; }
+  .btn2 { margin-top:8px; padding:9px 14px; border:1.5px solid var(--rojo); color:var(--rojo); background:#fff; border-radius:8px; font-weight:bold; cursor:pointer; font-family:inherit; }
+  .res { border-radius:14px; padding:16px; margin-top:12px; white-space:pre-line; font-size:14px; line-height:1.45; display:none; border-left-width:6px; border-left-style:solid; }
+  .res h2 { margin:0 0 6px; font-size:17px; }
+  .res.ok { display:block; background:var(--verde-claro); border:1px solid #BFE6A8; border-left:6px solid var(--verde); color:var(--verde-txt); }
+  .res.aviso { display:block; background:var(--naranja-claro); border:1px solid #FFD699; border-left:6px solid var(--naranja); color:#8A4B00; }
+  .res.error { display:block; background:var(--rojo-claro); border:1px solid #F8B9C0; border-left:6px solid var(--rojo); color:var(--rojo-osc); }
+  .oculto { display:none !important; }
+  .tip { font-size:12.5px; color:var(--gris); line-height:1.45; }
+  footer { text-align:center; margin:18px 0 8px; }
+  footer .logos { display:flex; justify-content:center; align-items:center; gap:18px; margin-bottom:10px; }
+  footer .logos img.prog { height:64px; border-radius:8px; }
+  footer .logos img.acr { height:58px; }
+  footer p { font-size:11px; color:var(--gris); margin:0; line-height:1.45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="assets/ufps.png" alt="UFPS" width="54" height="54">
+    <div class="txt">
+      <small><b>PULSO</b> · Asistencia docente<br>Departamento de Electricidad y Electrónica</small>
+      <h1 id="hola">Cargando…</h1>
+    </div>
+  </header>
+  <div class="bandera" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <div class="res" id="resInicial"></div>
+
+  <div class="card clase oculto" id="clase">
+    <div class="et" id="claseEt"></div>
+    <div class="mat" id="claseMat"></div>
+    <div class="sub" id="claseSub"></div>
+    <div class="salon" id="claseSalon"></div>
+    <button class="btn2 oculto" type="button" id="btnActualizar">Actualizar</button>
+  </div>
+
+  <div id="flujo" class="oculto">
+    <div class="card">
+      <div class="chk"><span class="dot" id="dWifi"></span><span><b>WiFi de la universidad</b><br><span class="tip">Conéctate a la red WiFi de la UFPS (no datos móviles).</span></span></div>
+      <div class="chk"><span class="dot wait" id="dGps"></span><span><b>Ubicación</b><br><span class="tip" id="tGps">Obteniendo ubicación…</span></span></div>
+      <div class="ayuda" id="aGps">
+        Activa la ubicación y dale permiso a este sitio.<br>
+        <b>Android:</b> panel rápido → Ubicación; luego candado junto a la dirección → Permisos → Ubicación.<br>
+        <b>iPhone:</b> Ajustes → Privacidad → Localización → Safari → “Al usar la app” + “Ubicación exacta”.
+        <br><button class="btn2" type="button" id="reGps">Reintentar</button>
+      </div>
+      <div class="chk oculto" id="filaFoto"><span class="dot" id="dFoto"></span><span style="flex:1"><b>Foto en el salón</b><br><span class="tip" id="tFoto">Con la cámara frontal, en este momento.</span>
+        <video id="video" playsinline muted class="oculto"></video>
+        <img id="foto" class="foto oculto" alt="Foto tomada">
+        <button class="btn2 oculto" type="button" id="btnFoto">Tomar foto</button>
+        <button class="btn2 oculto" type="button" id="btnRepetir">Repetir</button>
+      </span></div>
+    </div>
+    <button class="btn" id="registrar" type="button" disabled>Registrar asistencia</button>
+    <div class="res" id="res"></div>
+  </div>
+
+  <div class="card tip" id="instalar"><b>Consejo:</b> agrega esta página a la pantalla de inicio <b>antes de tu primer registro</b> y usa siempre ese ícono.<br>Chrome: ⋮ → <i>Agregar a pantalla principal</i> · Safari: Compartir → <i>Agregar a inicio</i>.</div>
+  <footer>
+    <div class="logos">
+      <img class="prog" src="assets/ing-electronica.png" alt="Ingeniería Electrónica – UFPS">
+      <img class="acr" src="assets/acreditado.png" alt="Programa acreditado de alta calidad">
+    </div>
+    <p>Se registran la hora, la ubicación, la red y el celular como evidencia de asistencia,<br>conforme a la política de tratamiento de datos de la UFPS.</p>
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  // Dirección del puente (Cloudflare Worker). En GitHub Pages la escribe el workflow en config.js.
+  var API = window.PULSO_API || '/api';
+  var SIN_CONFIGURAR = /TU-SUBDOMINIO/.test(API);
+  var $ = function (id) { return document.getElementById(id); };
+  var q = new URLSearchParams(location.search);
+  // El enlace personal se recuerda en este celular (por si se abre desde el ícono de inicio sin el enlace)
+  var TOKEN = q.get('d') || '';
+  try { if (TOKEN) localStorage.setItem('asistencia_enlace', TOKEN); else TOKEN = localStorage.getItem('asistencia_enlace') || ''; } catch (e) {}
+  var S = { muestras: [], tGps: 0, foto: '', stream: null, exigeFoto: false, listoGps: false };
+
+  function api(cuerpo) {
+    return fetch(API, { method: 'POST', body: JSON.stringify(cuerpo) }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status); return r.json();
+    });
+  }
+  function dispositivo() {
+    var k = 'asistencia_celular', v = null;
+    try { v = localStorage.getItem(k); } catch (e) {}
+    if (!v) {
+      v = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      try { localStorage.setItem(k, v); } catch (e) { return ''; }
+    }
+    return v;
+  }
+  function caja(el, r) {
+    el.className = 'res ' + (r.tipo || 'error'); el.innerHTML = '';
+    var h = document.createElement('h2'); h.textContent = r.titulo || '';
+    var p = document.createElement('div'); p.textContent = r.mensaje || '';
+    el.appendChild(h); el.appendChild(p);
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function habilitar() { $('registrar').disabled = !(S.listoGps && (!S.exigeFoto || S.foto)); }
+
+  // ---------- Ubicación: 3 lecturas frescas ----------
+  function lectura() {
+    return new Promise(function (ok, mal) { navigator.geolocation.getCurrentPosition(ok, mal, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }); });
+  }
+  function errGps(e) {
+    if (e && e.code === 1) return 'Permiso de ubicación denegado. Sin ubicación no se puede registrar.';
+    if (e && e.code === 3) return 'La ubicación tardó demasiado. Verifica el GPS.';
+    return 'No se pudo obtener la ubicación. Verifica que el GPS esté activado.';
+  }
+  function ubicacion() {
+    S.listoGps = false; S.muestras = []; habilitar();
+    $('aGps').style.display = 'none'; $('dGps').className = 'dot wait'; $('tGps').textContent = 'Obteniendo ubicación…';
+    if (!navigator.geolocation) { $('dGps').className = 'dot err'; $('tGps').textContent = errGps(); $('aGps').style.display = 'block'; return Promise.reject(); }
+    var intentos = 0;
+    function otra() {
+      intentos++;
+      return lectura().then(function (p) {
+        S.muestras.push({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, t: p.timestamp });
+        $('tGps').textContent = 'Lectura ' + S.muestras.length + ' de 3…';
+      }, function (e) { if ((e && e.code === 1) || intentos >= 6) throw e; })
+        .then(function () {
+          if (S.muestras.length >= 3) return;
+          if (intentos >= 6) throw { code: 2 };
+          return new Promise(function (r) { setTimeout(r, 900); }).then(otra);
+        });
+    }
+    return otra().then(function () {
+      S.tGps = Date.now(); S.listoGps = true;
+      $('dGps').className = 'dot ok';
+      $('tGps').textContent = 'Ubicación activa (±' + Math.round(Math.min.apply(null, S.muestras.map(function (m) { return m.acc; }))) + ' m).';
+      habilitar();
+    }, function (e) {
+      $('dGps').className = 'dot err'; $('tGps').textContent = errGps(e); $('aGps').style.display = 'block';
+      throw e;
+    });
+  }
+  $('reGps').addEventListener('click', function () { ubicacion().catch(function () {}); });
+
+  // ---------- Foto (si la coordinación la exige) ----------
+  function apagar() { if (S.stream) { S.stream.getTracks().forEach(function (t) { t.stop(); }); S.stream = null; } }
+  function camara() {
+    $('dFoto').className = 'dot wait';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('dFoto').className = 'dot err'; $('tFoto').textContent = 'El navegador no permite usar la cámara.'; return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 } }, audio: false }).then(function (st) {
+      S.stream = st; var v = $('video'); v.srcObject = st; v.classList.remove('oculto'); v.play();
+      $('btnFoto').classList.remove('oculto'); $('tFoto').textContent = 'Mira a la cámara y toca “Tomar foto”.';
+    }, function () { $('dFoto').className = 'dot err'; $('tFoto').textContent = 'Permite el uso de la cámara para este sitio.'; });
+  }
+  $('btnFoto').addEventListener('click', function () {
+    var v = $('video'); if (!v.videoWidth) return;
+    var w = 480, h = Math.round(v.videoHeight * w / v.videoWidth), cv = document.createElement('canvas');
+    cv.width = w; cv.height = h; var x = cv.getContext('2d'); x.drawImage(v, 0, 0, w, h);
+    x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, h - 26, w, 26); x.fillStyle = '#fff'; x.font = 'bold 14px Arial';
+    x.fillText(new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' }), 10, h - 8);
+    S.foto = cv.toDataURL('image/jpeg', 0.72);
+    $('foto').src = S.foto; $('foto').classList.remove('oculto'); v.classList.add('oculto'); apagar();
+    $('btnFoto').classList.add('oculto'); $('btnRepetir').classList.remove('oculto');
+    $('dFoto').className = 'dot ok'; $('tFoto').textContent = 'Foto tomada.'; habilitar();
+  });
+  $('btnRepetir').addEventListener('click', function () { S.foto = ''; $('foto').classList.add('oculto'); $('btnRepetir').classList.add('oculto'); habilitar(); camara(); });
+
+  // ---------- Registrar ----------
+  $('registrar').addEventListener('click', function () {
+    var b = $('registrar'); b.disabled = true; b.textContent = 'Registrando…';
+    (Date.now() - S.tGps > 90000 ? ubicacion() : Promise.resolve()).then(function () {
+      return api({ accion: 'registrar', token: TOKEN, muestras: S.muestras, foto: S.foto, dispositivo: dispositivo(), ua: navigator.userAgent });
+    }).then(function (r) {
+      if (r.ok) {
+        $('flujo').classList.add('oculto'); apagar(); caja($('resInicial'), r); return;
+      }
+      $('dWifi').className = r.motivo === 'red' ? 'dot err' : $('dWifi').className;
+      caja($('res'), r); b.textContent = 'Registrar asistencia'; habilitar();
+    }).catch(function (e) {
+      b.textContent = 'Registrar asistencia'; habilitar();
+      if (!(e && e.code)) caja($('res'), { tipo: 'error', titulo: 'Sin conexión', mensaje: 'No se pudo contactar al servidor. Revisa la conexión e inténtalo de nuevo.' });
+    });
+  });
+
+  // ---------- Inicio ----------
+  function cargar() {
+    $('btnActualizar').classList.add('oculto');
+    api({ accion: 'estado', token: TOKEN }).then(function (r) {
+      if (!r.ok) { $('hola').textContent = 'Asistencia docente'; caja($('resInicial'), r); return; }
+      $('hola').textContent = 'Hola, ' + r.docente.split(' ').slice(-2).join(' ');
+      S.exigeFoto = r.exigeFoto;
+      var c = r.actual || r.siguiente;
+      $('clase').classList.remove('oculto');
+      if (!c) {
+        $('claseEt').textContent = 'Hoy'; $('claseMat').textContent = 'No tienes más clases programadas hoy.';
+        $('claseSub').textContent = ''; $('claseSalon').textContent = ''; return;
+      }
+      $('claseEt').textContent = r.actual ? 'Tu clase ahora' : 'Tu próxima clase · podrás registrar desde las ' + c.desde;
+      $('claseMat').textContent = c.materia; $('claseSub').textContent = c.inicio + '–' + c.fin + ' · Grupo ' + c.grupo; $('claseSalon').textContent = c.salon;
+      if (!r.actual) { $('btnActualizar').classList.remove('oculto'); return; }
+      $('flujo').classList.remove('oculto');
+      if (S.exigeFoto) { $('filaFoto').classList.remove('oculto'); camara(); }
+      ubicacion().catch(function () {});
+    }).catch(function () {
+      $('hola').textContent = 'Asistencia docente';
+      caja($('resInicial'), { tipo: 'error', titulo: 'Sin conexión', mensaje: 'No se pudo contactar al servidor. Revisa la conexión y recarga la página.' });
+    });
+  }
+  $('btnActualizar').addEventListener('click', cargar);
+  if (SIN_CONFIGURAR) {
+    $('hola').textContent = 'Asistencia docente';
+    caja($('resInicial'), { tipo: 'error', titulo: 'Página sin configurar', mensaje: 'Falta la dirección del Worker en config.js. Publica con el workflow "Desplegar" (GitHub Pages → Source: GitHub Actions) o edita config.js.' });
+    return;
+  }
+  if (!TOKEN) { $('hola').textContent = 'Asistencia docente'; caja($('resInicial'), { tipo: 'error', titulo: 'Falta tu enlace personal', mensaje: 'Abre el enlace personal que te envió la coordinación.' }); return; }
+  cargar();
+})();
+</script>
+</body>
+</html>
