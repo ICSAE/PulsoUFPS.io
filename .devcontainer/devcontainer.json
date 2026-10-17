@@ -1,0 +1,12 @@
+{
+  "name": "Pulso · Asistencia docente UFPS",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/python:1": {}
+  },
+  "postCreateCommand": "npm ci && pip install --user openpyxl",
+  "customizations": {
+    "vscode": { "settings": { "terminal.integrated.defaultProfile.linux": "bash" } }
+  }
+}

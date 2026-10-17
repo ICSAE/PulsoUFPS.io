@@ -1,0 +1,162 @@
+name: Desplegar
+
+# Cada cambio en main: pruebas → Apps Script (misma URL siempre) → Cloudflare Worker → GitHub Pages (index.html).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desplegar
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    name: Verificar secretos
+    runs-on: ubuntu-latest
+    outputs:
+      listo: ${{ steps.v.outputs.listo }}
+    steps:
+      - id: v
+        env:
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          WORKER_SECRETO: ${{ secrets.WORKER_SECRETO }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          faltan=""
+          for v in SCRIPT_ID CLASPRC_JSON WORKER_SECRETO CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!v}" ]; then faltan="$faltan $v"; fi
+          done
+          if [ -n "$faltan" ]; then
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::Faltan secretos del repositorio:$faltan. Ejecuta 'bash scripts/configurar.sh' en un Codespace (ver README)."
+            { echo "### ⚠️ Despliegue omitido"; echo "Faltan estos secretos en *Settings → Secrets and variables → Actions*:"; for v in $faltan; do echo "- \`$v\`"; done; echo; echo "Ejecuta \`bash scripts/configurar.sh\` en un Codespace (ver README)."; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          fi
+
+  pruebas:
+    uses: ./.github/workflows/pruebas.yml
+
+  apps-script:
+    name: Apps Script
+    needs: [verificar, pruebas]
+    if: needs.verificar.outputs.listo == 'si'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.dep.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Credenciales de clasp
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+      - name: Subir y desplegar
+        id: dep
+        env:
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+          WORKER_SECRETO: ${{ secrets.WORKER_SECRETO }}
+        run: node scripts/desplegar-apps-script.mjs
+      - name: Borrar credenciales
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json apps-script/zz_secreto.gs
+
+  worker:
+    name: Cloudflare Worker
+    needs: [apps-script]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.cf.outputs.url }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Desplegar Worker y cargar secretos
+        id: cf
+        env:
+          APPS_SCRIPT_URL: ${{ needs.apps-script.outputs.url }}
+          WORKER_SECRETO: ${{ secrets.WORKER_SECRETO }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          npx wrangler deploy --config worker/wrangler.toml 2>&1 | tee deploy.log
+          printf '%s' "$APPS_SCRIPT_URL" | npx wrangler secret put APPS_SCRIPT_URL --config worker/wrangler.toml
+          printf '%s' "$WORKER_SECRETO"  | npx wrangler secret put SECRETO --config worker/wrangler.toml
+          # Solo la página de GitHub Pages de este repositorio puede llamar a la API desde el navegador
+          printf 'https://%s.github.io' "${OWNER,,}" | npx wrangler secret put ORIGEN_PAGINA --config worker/wrangler.toml
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Prueba de humo
+        env:
+          URL: ${{ steps.cf.outputs.url }}
+        run: |
+          sleep 5
+          r=$(curl -sS -X POST "$URL/api" --data '{"accion":"estado","token":"prueba-de-humo-invalida-000000"}' || true)
+          echo "Respuesta: $r"
+          if echo "$r" | grep -q 'Enlace no v'; then
+            estado="✅ Worker → Apps Script funcionando (firma verificada)."
+          elif echo "$r" | grep -q 'no autorizado'; then
+            estado="❌ El Apps Script rechazó la firma: revisa que WORKER_SECRETO sea el mismo y vuelve a ejecutar."
+          else
+            estado="⏳ El Apps Script aún no responde. Si es la primera vez: abre la hoja → menú *Pulso · Asistencia → 1. Autorizar* y vuelve a ejecutar este workflow."
+          fi
+          {
+            echo "### Cloudflare Worker"
+            echo "- URL del Worker (puente de la API): $URL"
+            echo "- Estado: $estado"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pagina:
+    name: GitHub Pages (index.html)
+    needs: [worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Compilar la página con la URL del Worker
+        env:
+          API_URL: ${{ needs.worker.outputs.url }}/api
+        run: node worker/build.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-pagina
+      - id: publicar
+        uses: actions/deploy-pages@v4
+      - name: Resumen
+        env:
+          URL: ${{ steps.publicar.outputs.page_url }}
+        run: |
+          {
+            echo "### GitHub Pages"
+            echo "- **URL de la página** (pégala en la hoja → Config → *URL de la página (GitHub Pages)*): $URL"
+            echo "- Los enlaces personales quedan así: \`${URL}?d=<clave del docente>\`"
+          } >> "$GITHUB_STEP_SUMMARY"

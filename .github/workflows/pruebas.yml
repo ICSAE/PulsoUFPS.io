@@ -1,0 +1,29 @@
+name: Pruebas
+
+# Prueba de punta a punta: servidor (Apps Script simulado) + Worker real + Chromium como celular.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]   # en main las corre el workflow "Desplegar"
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    name: Pruebas de seguridad y registro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: America/Bogota
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test

@@ -7,3 +7,4 @@ apps-script/zz_secreto.gs
 deploy.log
 .wrangler/
 __pycache__/
+dist-pagina/
