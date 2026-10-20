@@ -31,6 +31,7 @@ function onOpen() {
     .addItem('4. Activar automatización', 'activarAutomatizacion')
     .addSeparator()
     .addItem('Actualizar redes detectadas', 'detectarRedes')
+    .addItem('Enviar recordatorio de hoy a los docentes', 'recordatorioDiario')
     .addItem('Conciliar ahora', 'conciliar')
     .addItem('Enviar reporte de hoy', 'reporteDiario')
     .addToUi();
@@ -458,11 +459,52 @@ function enviarEnlaces() {
 
 function activarAutomatizacion() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (['conciliar', 'reporteDiario'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['conciliar', 'reporteDiario', 'recordatorioDiario'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('conciliar').timeBased().everyMinutes(15).create();
   ScriptApp.newTrigger('reporteDiario').timeBased().atHour(22).nearMinute(30).everyDays(1).create();
-  avisar_('Automatización activada: conciliación cada 15 min y reporte diario hacia las 10:30 p. m.');
+  // Google ejecuta los disparadores diarios dentro de una ventana (~±15 min): se programa a las 5:30
+  // para que el recordatorio llegue antes de las clases de las 6:00.
+  ScriptApp.newTrigger('recordatorioDiario').timeBased().atHour(5).nearMinute(30).everyDays(1).create();
+  avisar_('Automatización activada:\n• Recordatorio a cada docente con clase, entre 5:15 y 5:45 a. m.\n• Conciliación cada 15 min.\n• Reporte diario hacia las 10:30 p. m.');
+}
+
+/**
+ * Recordatorio de la mañana: a cada docente que tiene clase HOY le llega un correo con sus clases
+ * (hora, salón, materia) y su enlace personal. Se omite en festivos y fuera de las fechas de control.
+ */
+function recordatorioDiario() {
+  var cfg = leerConfig_(), ahora = new Date();
+  if (!cfg.recordatorio) return 0;
+  var fecha = fmt_(ahora, cfg.tz, 'yyyy-MM-dd');
+  if (!diaHabil_(fecha, cfg)) return 0;
+  var base = basePagina_(cfg);
+  if (!base) throw new Error('Falta Config → "URL de la página (GitHub Pages)".');
+  var dia = diaDe_(ahora, cfg.tz);
+  var porDocente = {};
+  leerHorario_().forEach(function (c) { if (c.dia === dia) (porDocente[c.codDoc] = porDocente[c.codDoc] || []).push(c); });
+  var enviados = 0, sinCupo = [];
+  hoja_('Docentes').getDataRange().getDisplayValues().slice(1).forEach(function (f) {
+    var cod = normalizarCodigo_(f[0]), correo = String(f[3] || '').trim(), clave = String(f[5] || '').trim();
+    var clases = porDocente[cod];
+    if (!cod || up_(f[4]) === 'NO' || !correo || !clave || !clases) return;
+    if (MailApp.getRemainingDailyQuota() < 3) { sinCupo.push(f[1]); return; }
+    clases.sort(function (a, b) { return a.iniMin - b.iniMin; });
+    var lista = clases.map(function (c) { return '• ' + c.inicio + '–' + c.fin + '  ' + c.salon + '  ' + c.materia + ' (' + c.codMat + ')'; }).join('\n');
+    var nombre = String(f[1]).split(' ').slice(-2).join(' ');
+    enviarCorreo_(correo, 'Pulso · Tus clases de hoy, ' + dia.toLowerCase() + ' ' + fecha,
+      'Hola ' + nombre + ',\n\nHoy tienes ' + (clases.length === 1 ? 'esta clase' : 'estas clases') + ':\n' + lista +
+      '\n\nRegistra tu asistencia al llegar al salón (desde ' + cfg.minAntes + ' minutos antes del inicio):\n' +
+      base + '/?d=' + clave +
+      '\n\nRecuerda: conectado al WiFi de la UFPS y con la ubicación activada. Usa siempre el mismo celular.');
+    enviados++;
+  });
+  if (sinCupo.length && cfg.correo) {
+    MailApp.sendEmail(cfg.correo, 'Pulso: cupo diario de correos agotado',
+      'No se pudo enviar el recordatorio a: ' + sinCupo.join(', ') + '. Gmail permite ~100 destinatarios por día en cuentas personales.');
+  }
+  Logger.log('Recordatorios enviados: ' + enviados);
+  return enviados;
 }
 
 /** Dirección pública de la página del docente: GitHub Pages (preferida) o el Worker. Sin "/" final. */
@@ -495,6 +537,7 @@ function leerConfig_() {
     alertaInmediata: si('Correo inmediato por alertas (SI/NO)', true),
     minAntes: num('Minutos antes del inicio para registrar', 15), tolerancia: num('Tolerancia de llegada (min)', 10),
     alertas: si('Enviar alertas de no registro (SI/NO)', true),
+    recordatorio: si('Recordatorio diario a docentes (SI/NO)', true),
     inicio: fechaIso_(m['Fecha inicio de control']), fin: fechaIso_(m['Fecha fin de control'])
   };
 }
@@ -608,6 +651,7 @@ var COLORES_UFPS = { rojo: '#E2031A', negro: '#111111', naranja: '#FF9900', verd
 function enviarCorreo_(para, asunto, texto) {
   var base = '';
   try { base = basePagina_(leerConfig_()); } catch (e) { /* sin config */ }
+  if (MailApp.getRemainingDailyQuota() < 1) { Logger.log('Sin cupo de correo: ' + asunto); return; }
   MailApp.sendEmail(para, asunto, texto, { name: 'Pulso · Asistencia docente UFPS', htmlBody: correoHtml_(asunto, texto, base) });
 }
 

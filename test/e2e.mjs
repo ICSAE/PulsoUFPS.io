@@ -66,7 +66,7 @@ const ctx = {
   SpreadsheetApp: { getActive: () => ({ getSheetByName: n => sheets[n], getUrl: () => 'https://docs.google.com/spreadsheets/d/TEST' }), getUi: () => { throw new Error('sin UI'); } },
   Session: { getScriptTimeZone: () => TZ },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-  MailApp: { sendEmail: (to, s, b) => mails.push({ to, s, b }) },
+  MailApp: { sendEmail: (to, s, b, o) => mails.push({ to, s, b, o }), getRemainingDailyQuota: () => 100 },
   Logger: { log() {} },
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ s, setMimeType() { return this; } }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => (props[k] = v) }) },
@@ -256,6 +256,16 @@ const redUfps = sheets.Redes.data.find(f => f[0] === '200.21.5.0/24');
 const redCasa = sheets.Redes.data.find(f => f[0] === '181.50.3.0/24');
 check('Redes: la red UFPS se actualiza con docentes y registros', redUfps && Number(redUfps[2]) >= 2, redUfps && `${redUfps[2]} docentes, ${redUfps[3]} registros`);
 check('Redes: la conexión con GPS sospechoso no se aprende', !redCasa);
+
+// 12. Recordatorio diario: un correo por docente con clase hoy, con su enlace
+const antes = mails.length;
+for (const f of sheets.Docentes.data.slice(1)) if (prueba[f[0]]) f[3] = 'doc' + f[0] + '@ufps.edu.co';
+const nRec = ctx.recordatorioDiario();
+const rec = mails.slice(antes);
+const conClaseHoy = new Set(H.slice(1).filter(r => r[1] === hoy).map(r => r[6]));
+const esperados = Object.keys(prueba).filter(c => conClaseHoy.has(c)).length;
+check('Recordatorio diario: un correo por docente con clase hoy', nRec === esperados && rec.length === esperados, nRec + ' enviados');
+check('Recordatorio incluye clases y enlace personal', rec.every(m => /CLASE DE PRUEBA/.test(m.b) && m.b.includes('?d=') && m.o && /Pulso/.test(m.o.name)), rec[0] && rec[0].s);
 
 console.log('\nRegistros: ' + (sheets.Registros.data.length - 1) + ' · Asistencia: ' + (sheets.Asistencia.data.length - 1) + ' · Correos: ' + mails.length);
 console.log(fallas ? '\n' + fallas + ' FALLAS' : '\nTODAS LAS PRUEBAS OK');
