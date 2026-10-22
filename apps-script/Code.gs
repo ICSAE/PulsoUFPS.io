@@ -662,9 +662,9 @@ function correoHtml_(asunto, texto, base) {
     .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:' + c.rojo + ';word-break:break-all">$1</a>')
     .replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ()]+:)$/gm, '<b style="color:' + c.rojo + '">$1</b>')
     .replace(/\n/g, '<br>');
-  var logo = base ? '<img src="' + base + '/assets/ufps.png" width="48" height="48" alt="UFPS" style="display:block;border:0">' : '';
-  var pie = base ? '<img src="' + base + '/assets/ing-electronica.png" height="44" alt="Ingeniería Electrónica – UFPS" style="vertical-align:middle;border:0;border-radius:6px">' +
-    '&nbsp;&nbsp;<img src="' + base + '/assets/acreditado.png" height="40" alt="Acreditado" style="vertical-align:middle;border:0">' : '';
+  var logo = base ? '<img src="' + base + '/assets/ufps.png" width="67" height="48" alt="UFPS" style="display:block;border:0">' : '';
+  var pie = base ? '<img src="' + base + '/assets/ing-electronica.png" width="162" height="40" alt="UFPS – Ingeniería Electrónica" style="vertical-align:middle;border:0;margin:4px 8px">' +
+    '<img src="' + base + '/assets/ing-electromecanica.png" width="187" height="40" alt="UFPS – Ingeniería Electromecánica" style="vertical-align:middle;border:0;margin:4px 8px">' : '';
   return '<div style="background:#F5F5F7;padding:16px 0;font-family:Arial,Helvetica,sans-serif">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #E2E3E6">' +
     '<tr><td style="background:' + c.rojo + ';padding:14px 18px"><table role="presentation" cellpadding="0" cellspacing="0"><tr>' +

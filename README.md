@@ -36,7 +36,7 @@ index.html        ──► /api (agrega IP real ──► valida enlace, red, �
 | Bandera – naranja (pendiente, avisos) | `#FF9900` |
 | Bandera – verde (confirmado) | `#66CC33` |
 
-- **Página del docente**: encabezado rojo con el logo UFPS, franja de la bandera, y al pie los logos de Ingeniería Electrónica y Programa acreditado; el texto institucional es el del Departamento de Electricidad y Electrónica.
+- **Página del docente**: encabezado rojo con el logo UFPS, franja de la bandera, y al pie los logos de los programas de Ingeniería Electrónica e Ingeniería Electromecánica; el texto institucional es el del Departamento de Electricidad y Electrónica.
 - **Ícono del celular**: al agregarla a la pantalla de inicio aparece como **Pulso UFPS** con el logo UFPS (`/manifest.webmanifest`).
 - **Correos** (enlaces, alertas, reporte diario): mismo encabezado y franja tricolor.
 - **Hoja**: encabezados rojos, logos, franja de la bandera, pestañas de color y semáforo de cumplimiento.
