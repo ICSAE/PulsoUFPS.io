@@ -41,7 +41,8 @@ const docs = [...new Map(horario.map(r => [r.cd, r.nom]))];
 const sinClaseHoy = docs.find(([c]) => !prueba[c] && !horario.some(r => r.cd === c && r.dia === hoy))[0];
 const TOKEN = Object.fromEntries(docs.map(([c]) => [c, crypto.randomBytes(16).toString('hex')]));
 const H = [['ID clase', 'Día', 'Hora inicio', 'Hora fin', 'Código materia', 'Materia', 'Código docente', 'Docente', 'Salón', 'Alumnos']]
-  .concat(horario.map(r => [r.id, r.dia, r.ini, r.fin, r.cm, r.mat, r.cd, r.nom, r.sal, r.alu]))
+  // Las clases reales de hoy de los docentes de prueba se quitan para que la prueba no dependa de la hora en que corre
+  .concat(horario.filter(r => !(prueba[r.cd] && r.dia === hoy)).map(r => [r.id, r.dia, r.ini, r.fin, r.cm, r.mat, r.cd, r.nom, r.sal, r.alu]))
   .concat(Object.entries(prueba).map(([cd, sal], i) => ['TEST-' + i, hoy, ini, fin, 'PRUEBA' + i, 'CLASE DE PRUEBA ' + i, cd, docs.find(d => d[0] === cd)[1], sal, 10]));
 const config = [['Parámetro', 'Valor'], ['URL del Worker', 'http://localhost:8791'], ['Correo del coordinador', 'coord@ufps.edu.co'],
   ['Validación de red WiFi (NO/ALERTA/EXIGIR)', 'ALERTA'], ['Latitud del campus', 7.898115], ['Longitud del campus', -72.488703], ['Radio permitido (m)', 300],
@@ -63,7 +64,7 @@ const props = {}, mails = [];
 const signed = buf => Array.from(buf).map(b => (b > 127 ? b - 256 : b));
 const ctx = {
   console,
-  SpreadsheetApp: { getActive: () => ({ getSheetByName: n => sheets[n], getUrl: () => 'https://docs.google.com/spreadsheets/d/TEST' }), getUi: () => { throw new Error('sin UI'); } },
+  SpreadsheetApp: { getActive: () => ({ getSheetByName: n => sheets[n], insertSheet: n => (sheets[n] = mkSheet([])), getUrl: () => 'https://docs.google.com/spreadsheets/d/TEST' }), getUi: () => { throw new Error('sin UI'); } },
   Session: { getScriptTimeZone: () => TZ },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   MailApp: { sendEmail: (to, s, b, o) => mails.push({ to, s, b, o }), getRemainingDailyQuota: () => 100 },
@@ -82,6 +83,7 @@ vm.createContext(ctx);
 // Igual que en GitHub Actions: el secreto llega como archivo zz_secreto.gs
 vm.runInContext(`var SECRETO_WORKER_CI = '${SECRETO}';`, ctx);
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'apps-script', 'Code.gs'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'apps-script', 'asesorias_datos.gs'), 'utf8'), ctx);
 
 // "Apps Script" (puerto 8790)
 const gas = http.createServer((req, res) => {
@@ -266,6 +268,50 @@ const conClaseHoy = new Set(H.slice(1).filter(r => r[1] === hoy).map(r => r[6]))
 const esperados = Object.keys(prueba).filter(c => conClaseHoy.has(c)).length;
 check('Recordatorio diario: un correo por docente con clase hoy', nRec === esperados && rec.length === esperados, nRec + ' enviados');
 check('Recordatorio incluye clases y enlace personal', rec.every(m => /CLASE DE PRUEBA/.test(m.b) && m.b.includes('?d=') && m.o && /Pulso/.test(m.o.name)), rec[0] && rec[0].s);
+
+// 13. Asesorías: se cargan en su hoja, agregan docentes nuevos y se registran como una clase
+const nDoc = sheets.Docentes.data.length;
+ctx.cargarAsesorias();
+const hA = sheets['Asesorías'];
+check('Asesorías cargadas en su propia hoja', hA && hA.data.length - 1 === ctx.ASESORIAS_2026_2.length && hA.data[0][0] === 'ID clase', hA && (hA.data.length - 1) + ' bloques');
+check('Docentes nuevos de asesorías agregados a Docentes', sheets.Docentes.data.length === nDoc + ctx.DOCENTES_NUEVOS_ASESORIAS.length && ctx.DOCENTES_NUEVOS_ASESORIAS.every(d => sheets.Docentes.data.some(f => f[0] === d[0])));
+check('Asesorías unidas al horario', ctx.leerHorario_().filter(c => c.asesoria).length === ctx.ASESORIAS_2026_2.length);
+const nomSin = docs.find(d => d[0] === sinClaseHoy)[1];
+hA.data.push(['ASE-TEST', hoy, ini, fin, 'ASESORIA', 'ASESORÍA · Ing. Electrónica', sinClaseHoy, nomSin, '', 'Electrónica']);
+const pAse = await (await celular(browser)).newPage();
+const eAse = await abrir(pAse, sinClaseHoy);
+const rAse = await registrar(pAse, sinClaseHoy);
+check('La página muestra la asesoría actual', /asesoría ahora/i.test(eAse.clase) && /ASESORÍA/.test(eAse.clase), eAse.clase.replace(/\n/g, ' '));
+check('Asesoría registrada como asistencia', /registrada/.test(rAse.texto) && sheets.Asistencia.data.some(f => f[2] === 'ASE-TEST' && /A tiempo|Tarde/.test(f[12])), rAse.texto.split('\n')[0]);
+
+// 14. Tablero de salones para los becas trabajo
+const CLAVE_T = 'clave-tablero-prueba-123456';
+sheets.Config.data.push(['Clave del tablero (becas trabajo)', CLAVE_T]);
+const tab = async (o) => (await fetch('http://localhost:8791/api', { method: 'POST', body: JSON.stringify(o) })).json();
+const t0 = await tab({ accion: 'tablero', clave: 'otra' });
+check('Tablero con clave equivocada → rechazado', !t0.ok && /no válido/.test(t0.titulo));
+const t1 = await tab({ accion: 'tablero', clave: CLAVE_T });
+const item = (t, id) => t.sectores.flatMap(s => s.items.map(i => ({ ...i, sector: s.id }))).find(i => i.id === id);
+check('Tablero agrupa por bloques AG, LE y LG', t1.ok && ['AG', 'LE', 'LG'].every(id => t1.sectores.some(s => s.id === id)), t1.sectores && t1.sectores.map(s => s.id + ':' + s.items.length).join(' '));
+check('Docente registrado → su salón aparece "abrir"', item(t1, 'TEST-0') && item(t1, 'TEST-0').estado === 'abrir' && item(t1, 'TEST-0').sector === 'AG' && item(t1, 'TEST-5').sector === 'LE');
+check('Docente que no ha registrado → "esperando"', item(t1, 'TEST-4') && item(t1, 'TEST-4').estado === 'esperando');
+check('Asesoría sin salón va a su propio grupo', item(t1, 'ASE-TEST') && item(t1, 'ASE-TEST').sector === 'ASESORIAS');
+const pT = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
+await pT.goto('http://localhost:8792/pulso-ufps/tablero.html?k=' + CLAVE_T);
+await pT.waitForSelector('.card.abrir .ok', { timeout: 20000 });
+await pT.fill('#quien', 'Beca de prueba'); await pT.$eval('#quien', e => e.dispatchEvent(new Event('change')));
+if (process.env.CAPTURAS) await pT.screenshot({ path: process.env.CAPTURAS + '/tablero.png', fullPage: true });
+const pTm = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+await pTm.goto('http://localhost:8792/pulso-ufps/tablero.html?k=' + CLAVE_T);
+await pTm.waitForSelector('.card.abrir', { timeout: 20000 });
+if (process.env.CAPTURAS) await pTm.screenshot({ path: process.env.CAPTURAS + '/tablero_celular.png', fullPage: true });
+const porAbrir = await pT.$$eval('.card.abrir', e => e.length);
+await pT.click('.card.abrir .ok');
+await pT.waitForFunction(n => document.querySelectorAll('.card.abrir').length === n - 1, porAbrir, { timeout: 20000 });
+const ap = sheets.Aperturas && sheets.Aperturas.data.slice(1);
+check('Beca marca "Ya abrí el salón" → queda en Aperturas', ap && ap.length === 1 && ap[0][5] === 'Beca de prueba', ap && ap[0] && ap[0].slice(2, 6).join(' · '));
+const t2 = await tab({ accion: 'tablero', clave: CLAVE_T });
+check('Salón abierto deja de pedir apertura', item(t2, ap[0][2]).estado === 'abierto');
 
 console.log('\nRegistros: ' + (sheets.Registros.data.length - 1) + ' · Asistencia: ' + (sheets.Asistencia.data.length - 1) + ' · Correos: ' + mails.length);
 console.log(fallas ? '\n' + fallas + ' FALLAS' : '\nTODAS LAS PRUEBAS OK');

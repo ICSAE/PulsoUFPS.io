@@ -27,6 +27,18 @@ index.html        ──► /api (agrega IP real ──► valida enlace, red, �
 | **Firma HMAC** Worker → Apps Script | Saltarse el Worker llamando directo al servidor |
 | **Foto en vivo** (opcional) | Prestar el celular |
 
+## Asesorías
+- Menú **Pulso · Asistencia → Cargar horario de asesorías 2026-2** crea la hoja **Asesorías** (Ing. Electrónica e Ing. Electromecánica). Las franjas seguidas de un mismo docente se unen en un solo bloque.
+- El docente registra la asesoría con el mismo enlace, igual que una clase. Le llega en el recordatorio de la mañana y cuenta en la asistencia y el reporte.
+- Escribe el **Salón** de cada asesoría en la hoja cuando se sepa: así aparece en el bloque correspondiente del tablero.
+- Para regenerar los datos: edita `herramientas/datos_asesorias.py` y ejecuta `python3 herramientas/generar_asesorias.py`.
+
+## Tablero de salones (becas trabajo)
+- `tablero.html?k=<clave>`: muestra, por bloque **AG, LE y LG**, las clases y asesorías en curso o que empiezan en la próxima hora.
+- 🟢 **ABRIR**: el docente ya registró su llegada · 🟠 esperando al docente · 🔴 pasó la tolerancia sin registro · ⚪ próxima o ya abierta.
+- El beca toca **Ya abrí el salón** y queda en la hoja **Aperturas**.
+- Enlace: menú **Enlace del tablero de salones (becas trabajo)**. Se actualiza solo cada minuto (Config → *Actualizar tablero cada (min)*).
+
 ## Identidad visual UFPS
 
 | Uso | Color |

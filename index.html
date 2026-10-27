@@ -234,11 +234,13 @@
       var c = r.actual || r.siguiente;
       $('clase').classList.remove('oculto');
       if (!c) {
-        $('claseEt').textContent = 'Hoy'; $('claseMat').textContent = 'No tienes más clases programadas hoy.';
+        $('claseEt').textContent = 'Hoy'; $('claseMat').textContent = 'No tienes más clases ni asesorías programadas hoy.';
         $('claseSub').textContent = ''; $('claseSalon').textContent = ''; return;
       }
-      $('claseEt').textContent = r.actual ? 'Tu clase ahora' : 'Tu próxima clase · podrás registrar desde las ' + c.desde;
-      $('claseMat').textContent = c.materia; $('claseSub').textContent = c.inicio + '–' + c.fin + ' · Grupo ' + c.grupo; $('claseSalon').textContent = c.salon;
+      var que = c.asesoria ? 'asesoría' : 'clase';
+      $('claseEt').textContent = r.actual ? 'Tu ' + que + ' ahora' : 'Tu próxima ' + que + ' · podrás registrar desde las ' + c.desde;
+      $('claseMat').textContent = c.materia; $('claseSub').textContent = c.inicio + '–' + c.fin + (c.asesoria ? '' : ' · Grupo ' + c.grupo);
+      $('claseSalon').textContent = c.salon || (c.asesoria ? 'Asesoría' : '');
       if (!r.actual) { $('btnActualizar').classList.remove('oculto'); return; }
       $('flujo').classList.remove('oculto');
       if (S.exigeFoto) { $('filaFoto').classList.remove('oculto'); camara(); }

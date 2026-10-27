@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#E2031A">
+<link rel="icon" type="image/png" href="assets/icono-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<title>Pulso · Salones por abrir</title>
+<style>
+  /* Tablero para los becas trabajo: qué salón abrir y para qué docente. Identidad UFPS. */
+  :root {
+    --rojo:#E2031A; --rojo-osc:#B80215; --rojo-claro:#FDECEE;
+    --negro:#111111; --naranja:#FF9900; --naranja-claro:#FFF4E0; --naranja-txt:#8A4B00;
+    --verde:#66CC33; --verde-txt:#2E7D17; --verde-claro:#EEF9E7;
+    --gris:#5B5E63; --borde:#E2E3E6; --fondo:#F5F5F7;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: Arial, Helvetica, sans-serif; background:var(--fondo); color:var(--negro); }
+  .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+  header { background:var(--rojo); color:#fff; border-radius:14px 14px 0 0; padding:14px 16px; display:flex; gap:14px; align-items:center; }
+  header img { height:56px; width:auto; display:block; flex:none; }
+  header small { display:block; font-size:11px; opacity:.92; line-height:1.3; }
+  header h1 { margin:3px 0 0; font-size:20px; line-height:1.2; }
+  .bandera { display:grid; grid-template-rows:5px 5px 5px; border-radius:0 0 14px 14px; overflow:hidden; }
+  .bandera i:nth-child(1) { background:var(--negro); } .bandera i:nth-child(2) { background:var(--naranja); } .bandera i:nth-child(3) { background:var(--verde); }
+  .barra { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:14px 0 4px; font-size:13px; color:var(--gris); }
+  .barra .hora { font-size:22px; font-weight:bold; color:var(--negro); font-variant-numeric:tabular-nums; }
+  .barra .esp { flex:1; }
+  .btn2 { padding:8px 14px; border:1.5px solid var(--rojo); color:var(--rojo); background:#fff; border-radius:8px; font-weight:bold; cursor:pointer; font-family:inherit; font-size:14px; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px; }
+  .tab { border:1.5px solid var(--borde); background:#fff; border-radius:999px; padding:8px 14px; font-weight:bold; font-size:14px; cursor:pointer; font-family:inherit; color:var(--negro); display:flex; align-items:center; gap:6px; }
+  .tab[aria-pressed="true"] { background:var(--negro); border-color:var(--negro); color:#fff; }
+  .tab .n { background:var(--verde); color:#fff; border-radius:999px; min-width:20px; height:20px; font-size:12px; display:inline-flex; align-items:center; justify-content:center; padding:0 6px; }
+  .tab .n.cero { display:none; }
+  .sector { margin-top:16px; }
+  .sector h2 { font-size:15px; margin:0 0 8px; display:flex; align-items:baseline; gap:8px; }
+  .sector h2 span { font-weight:normal; color:var(--gris); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; }
+  .card { background:#fff; border:1px solid var(--borde); border-left:6px solid #C5C7CB; border-radius:12px; padding:12px 14px; }
+  .card .top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .card .salon { font-size:26px; font-weight:bold; letter-spacing:.02em; line-height:1.1; }
+  .card .hr { font-size:13px; color:var(--gris); font-weight:bold; white-space:nowrap; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .card .doc { font-size:14px; font-weight:bold; margin-top:6px; }
+  .card .mat { font-size:12.5px; color:var(--gris); margin-top:2px; }
+  .chip { display:inline-block; margin-top:8px; padding:5px 10px; border-radius:999px; font-size:12.5px; font-weight:bold; }
+  .card.abrir { border-left-color:var(--verde); background:var(--verde-claro); border-color:#BFE6A8; }
+  .card.abrir .salon { color:var(--verde-txt); }
+  .card.abrir .chip { background:var(--verde); color:#fff; font-size:14px; }
+  .card.esperando { border-left-color:var(--naranja); } .card.esperando .chip { background:var(--naranja-claro); color:var(--naranja-txt); }
+  .card.sin_registro { border-left-color:var(--rojo); } .card.sin_registro .chip { background:var(--rojo-claro); color:var(--rojo-osc); }
+  .card.proxima .chip { background:#EEEFF1; color:var(--gris); }
+  .card.abierto { opacity:.72; } .card.abierto .chip { background:#EEEFF1; color:var(--verde-txt); }
+  .card .ok { width:100%; margin-top:10px; padding:11px; font-size:15px; font-weight:bold; border:0; border-radius:10px; background:var(--verde-txt); color:#fff; cursor:pointer; font-family:inherit; }
+  .card .ok:disabled { background:#B9BBBF; }
+  .vacio { background:#fff; border:1px dashed var(--borde); border-radius:12px; padding:14px; color:var(--gris); font-size:14px; }
+  .aviso { border-radius:14px; padding:16px; margin-top:14px; font-size:14px; line-height:1.45; background:var(--rojo-claro); border:1px solid #F8B9C0; border-left:6px solid var(--rojo); color:var(--rojo-osc); }
+  .aviso h3 { margin:0 0 4px; font-size:16px; }
+  .leyenda { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:18px; font-size:12px; color:var(--gris); }
+  .leyenda b { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+  .quien { margin-top:14px; font-size:12.5px; color:var(--gris); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .quien input { padding:7px 10px; border:1px solid var(--borde); border-radius:8px; font-family:inherit; font-size:14px; min-width:200px; }
+  .oculto { display:none !important; }
+  @media (max-width:480px) { .wrap { padding:12px; } header h1 { font-size:18px; } header img { height:48px; } .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="assets/ufps.png" alt="Universidad Francisco de Paula Santander" width="78" height="56">
+    <div>
+      <small><b>PULSO</b> · Departamento de Electricidad y Electrónica</small>
+      <h1>Salones por abrir</h1>
+    </div>
+  </header>
+  <div class="bandera" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <div class="barra">
+    <span class="hora" id="hora">--:--</span>
+    <span id="fecha"></span>
+    <span class="esp"></span>
+    <span id="estadoAct">Cargando…</span>
+    <button class="btn2" type="button" id="btnAct">Actualizar</button>
+  </div>
+  <div class="tabs" id="tabs" role="toolbar" aria-label="Bloque"></div>
+
+  <div id="aviso" class="aviso oculto"></div>
+  <div id="sectores"></div>
+
+  <div class="leyenda">
+    <span><b style="background:var(--verde)"></b>El docente ya registró: abre el salón</span>
+    <span><b style="background:var(--naranja)"></b>Esperando que el docente registre</span>
+    <span><b style="background:var(--rojo)"></b>Pasó la hora de llegada sin registro</span>
+    <span><b style="background:#C5C7CB"></b>Empieza en la próxima hora / ya abierto</span>
+  </div>
+  <div class="quien"><label for="quien">Tu nombre (queda en el registro de aperturas):</label><input id="quien" maxlength="40" placeholder="Opcional"></div>
+</div>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  var API = window.PULSO_API || '/api';
+  var $ = function (id) { return document.getElementById(id); };
+  var q = new URLSearchParams(location.search);
+  var CLAVE = q.get('k') || '';
+  try { if (CLAVE) localStorage.setItem('pulso_tablero', CLAVE); else CLAVE = localStorage.getItem('pulso_tablero') || ''; } catch (e) {}
+  var filtro = 'TODOS';
+  try { filtro = localStorage.getItem('pulso_tablero_bloque') || 'TODOS'; $('quien').value = localStorage.getItem('pulso_tablero_quien') || ''; } catch (e) {}
+  $('quien').addEventListener('change', function () { try { localStorage.setItem('pulso_tablero_quien', $('quien').value.trim()); } catch (e) {} });
+
+  var datos = null, temporizador = null, ultima = 0, vistos = {};
+  var ETIQ = {
+    abrir: function (it) { return it.salon ? 'ABRIR · registró ' + it.registro : 'Docente llegó ' + it.registro + ' · sin salón asignado'; },
+    esperando: function () { return 'Esperando al docente'; },
+    sin_registro: function () { return 'Docente sin registro'; },
+    proxima: function (it) { return 'Empieza a las ' + it.inicio; },
+    abierto: function (it) { return 'Abierto ' + it.abierto + ' ✓'; }
+  };
+
+  function api(cuerpo) {
+    return fetch(API, { method: 'POST', body: JSON.stringify(cuerpo) }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status); return r.json();
+    });
+  }
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function aviso(titulo, msg) { var a = $('aviso'); a.innerHTML = ''; a.appendChild(el('h3', '', titulo)); a.appendChild(el('div', '', msg)); a.classList.remove('oculto'); }
+
+  function pintar() {
+    if (!datos) return;
+    var porAbrir = 0;
+    // Pestañas: Todos + cada bloque, con el número de salones por abrir
+    var tabs = $('tabs'); tabs.innerHTML = '';
+    var lista = [{ id: 'TODOS', nombre: 'Todos', items: [].concat.apply([], datos.sectores.map(function (s) { return s.items; })) }].concat(datos.sectores);
+    if (!lista.some(function (s) { return s.id === filtro; })) filtro = 'TODOS';
+    lista.forEach(function (s) {
+      var n = s.items.filter(function (i) { return i.estado === 'abrir'; }).length;
+      var b = el('button', 'tab', s.id === 'TODOS' ? 'Todos' : (s.id === 'ASESORIAS' ? 'Asesorías' : s.id === 'OTROS' ? 'Otros' : s.id));
+      b.type = 'button'; b.setAttribute('aria-pressed', String(s.id === filtro));
+      var c = el('span', 'n' + (n ? '' : ' cero'), String(n)); b.appendChild(c);
+      b.addEventListener('click', function () { filtro = s.id; try { localStorage.setItem('pulso_tablero_bloque', filtro); } catch (e) {} pintar(); });
+      tabs.appendChild(b);
+    });
+    var cont = $('sectores'); cont.innerHTML = '';
+    datos.sectores.forEach(function (s) {
+      porAbrir += s.items.filter(function (i) { return i.estado === 'abrir'; }).length;
+      if (filtro !== 'TODOS' && filtro !== s.id) return;
+      var sec = el('section', 'sector'), h = el('h2', '', s.nombre);
+      var n = s.items.filter(function (i) { return i.estado === 'abrir'; }).length;
+      h.appendChild(el('span', '', s.items.length ? (n ? n + ' por abrir · ' : '') + s.items.length + ' en la próxima hora' : ''));
+      sec.appendChild(h);
+      if (!s.items.length) { sec.appendChild(el('div', 'vacio', 'Sin clases ni asesorías en este bloque durante la próxima hora.')); cont.appendChild(sec); return; }
+      var g = el('div', 'grid');
+      s.items.forEach(function (it) {
+        var c = el('div', 'card ' + it.estado), top = el('div', 'top');
+        top.appendChild(el('div', 'salon', it.salon || 'Asesoría'));
+        top.appendChild(el('div', 'hr', it.inicio + '–' + it.fin));
+        c.appendChild(top);
+        c.appendChild(el('div', 'doc', it.docente));
+        c.appendChild(el('div', 'mat', it.materia));
+        c.appendChild(el('span', 'chip', ETIQ[it.estado](it)));
+        if (it.estado === 'abrir' && it.salon) {
+          var b = el('button', 'ok', 'Ya abrí el salón'); b.type = 'button';
+          b.addEventListener('click', function () {
+            b.disabled = true; b.textContent = 'Guardando…';
+            api({ accion: 'abrir', clave: CLAVE, id: it.id, por: $('quien').value.trim() }).then(function (r) {
+              if (!r.ok) { b.disabled = false; b.textContent = 'Ya abrí el salón'; aviso(r.titulo, r.mensaje); return; }
+              it.estado = 'abierto'; it.abierto = new Date().toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false });
+              pintar();
+            }).catch(function () { b.disabled = false; b.textContent = 'Ya abrí el salón'; });
+          });
+          c.appendChild(b);
+        }
+        g.appendChild(c);
+      });
+      sec.appendChild(g); cont.appendChild(sec);
+    });
+    document.title = (porAbrir ? '(' + porAbrir + ') ' : '') + 'Pulso · Salones por abrir';
+  }
+
+  function cargar() {
+    clearTimeout(temporizador);
+    $('estadoAct').textContent = 'Actualizando…';
+    api({ accion: 'tablero', clave: CLAVE }).then(function (r) {
+      if (!r.ok) { $('estadoAct').textContent = ''; $('sectores').innerHTML = ''; $('tabs').innerHTML = ''; aviso(r.titulo, r.mensaje); return; }
+      $('aviso').classList.add('oculto');
+      // Aviso (vibración) cuando aparece un salón nuevo por abrir
+      var nuevos = 0;
+      r.sectores.forEach(function (s) { s.items.forEach(function (i) { if (i.estado === 'abrir' && !vistos[i.id]) { vistos[i.id] = 1; nuevos++; } }); });
+      if (nuevos && ultima && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      datos = r; ultima = Date.now();
+      $('hora').textContent = r.hora; $('fecha').textContent = r.dia + ' ' + r.fecha;
+      if (!r.habil) aviso('Hoy no hay control de asistencia', 'Es festivo o está fuera de las fechas del semestre.');
+      var min = r.refrescarMin || 1;
+      $('estadoAct').textContent = 'Se actualiza solo cada ' + (min === 1 ? 'minuto' : min + ' min');
+      pintar();
+      temporizador = setTimeout(cargar, min * 60000);
+    }).catch(function () {
+      $('estadoAct').textContent = 'Sin conexión · reintentando…';
+      temporizador = setTimeout(cargar, 30000);
+    });
+  }
+  $('btnAct').addEventListener('click', cargar);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - ultima > 60000) cargar(); });
+
+  if (/TU-SUBDOMINIO/.test(API)) { aviso('Página sin configurar', 'Falta la dirección del Worker en config.js.'); return; }
+  if (!CLAVE) { aviso('Falta el enlace del tablero', 'Abre el enlace del tablero que te envió la coordinación.'); $('estadoAct').textContent = ''; return; }
+  cargar();
+})();
+</script>
+</body>
+</html>

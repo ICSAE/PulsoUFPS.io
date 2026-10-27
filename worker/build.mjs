@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST_PAGINA = path.join(RAIZ, 'dist-pagina');
-const archivos = ['index.html', 'config.js', 'manifest.webmanifest',
+const archivos = ['index.html', 'tablero.html', 'config.js', 'manifest.webmanifest',
   ...fs.readdirSync(path.join(RAIZ, 'assets')).filter((f) => f.endsWith('.png')).sort().map((f) => 'assets/' + f)];
 
 // 1. Worker: incrusta la página; dentro del Worker la API está en el mismo dominio

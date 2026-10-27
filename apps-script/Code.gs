@@ -11,8 +11,11 @@
  *    patrones de GPS falso), red de la universidad, clase en el horario y, opcional, selfie en vivo.
  *  - Conciliación cada 15 min, alertas y reporte diario por correo. Sin pantallas ni personal en los salones.
  *
- * Este archivo es el servidor (API + hoja). Hojas: Config, Horario, Docentes, Salones, Redes,
- * Festivos, Registros, Asistencia, Resumen.
+ * Este archivo es el servidor (API + hoja). Hojas: Config, Horario, Asesorías, Docentes, Salones, Redes,
+ * Festivos, Registros, Asistencia, Aperturas, Resumen.
+ *  - Las asesorías (hoja Asesorías) se registran igual que las clases.
+ *  - Tablero de salones (tablero.html) para los becas trabajo: muestra por bloque (AG, LE, LG) qué salón
+ *    abrir y para qué docente apenas el docente registra su llegada.
  *
  * Se despliega desde GitHub (Actions). El secreto compartido con el Worker NO está en el repositorio:
  * el workflow lo escribe en zz_secreto.gs (variable SECRETO_WORKER_CI) a partir del secreto de GitHub.
@@ -29,6 +32,10 @@ function onOpen() {
     .addItem('2. Generar enlaces personales', 'generarEnlaces')
     .addItem('3. Enviar enlaces por correo', 'enviarEnlaces')
     .addItem('4. Activar automatización', 'activarAutomatizacion')
+    .addSeparator()
+    .addItem('Cargar horario de asesorías 2026-2', 'cargarAsesorias')
+    .addItem('Enlace del tablero de salones (becas trabajo)', 'enlaceTablero')
+    .addItem('Enviar enlace a un solo docente…', 'enviarEnlaceUno')
     .addSeparator()
     .addItem('Actualizar redes detectadas', 'detectarRedes')
     .addItem('Enviar recordatorio de hoy a los docentes', 'recordatorioDiario')
@@ -65,6 +72,12 @@ function procesar_(sobre, ahora) {
   if (!red) return { ok: false, tipo: 'error', titulo: 'Acceso no autorizado', mensaje: 'Abre tu enlace personal de asistencia.' };
   var p = JSON.parse(sobre.payload || '{}');
   if (p.accion === 'estado') return apiEstado_(p, ahora);
+  if (p.accion === 'tablero') return apiTablero_(p, ahora);
+  if (p.accion === 'abrir') {
+    var lk = LockService.getScriptLock();
+    lk.waitLock(25000);
+    try { return apiAbrir_(p, ahora); } finally { lk.releaseLock(); }
+  }
   if (p.accion === 'registrar') {
     var lock = LockService.getScriptLock();
     lock.waitLock(25000);
@@ -96,7 +109,7 @@ function apiEstado_(p, ahora) {
   var clases = clasesDeHoy_(doc.codigo, ahora, cfg);
   var actual = buscarClase_(clases, null, nowMin, cfg.minAntes);
   var siguiente = clases.filter(function (c) { return c.iniMin - cfg.minAntes > nowMin; })[0] || null;
-  var resumen = function (c) { return c && { inicio: c.inicio, fin: c.fin, materia: c.materia, grupo: c.codMat, salon: c.salon, desde: hm_(c.iniMin - cfg.minAntes) }; };
+  var resumen = function (c) { return c && { inicio: c.inicio, fin: c.fin, materia: c.materia, grupo: c.codMat, salon: c.salon, desde: hm_(c.iniMin - cfg.minAntes), asesoria: c.asesoria }; };
   return { ok: true, docente: doc.nombre, actual: resumen(actual), siguiente: resumen(siguiente),
     exigeFoto: cfg.exigeFoto, minAntes: cfg.minAntes };
 }
@@ -135,7 +148,7 @@ function apiRegistrar_(p, red, ahora) {
   }
 
   // 3. Clase en el horario
-  var clase = buscarClase_(clasesDeHoy_(doc.codigo, ahora, cfg), null, nowMin, cfg.minAntes);
+  var clase = buscarClase_(clasesDeHoy_(doc.codigo, ahora, cfg), null, nowMin, cfg.minAntes, registradasHoy_(fecha));
   if (!clase) return rechazar('Sin clase en este horario', 'No tienes una clase programada ahora. Puedes registrar desde ' +
     cfg.minAntes + ' min antes del inicio hasta el final de la clase.');
   log.idClase = clase.id; log.salon = clase.salon;
@@ -356,9 +369,11 @@ function clasesDeHoy_(codigo, ahora, cfg) {
     .sort(function (a, b) { return a.iniMin - b.iniMin; });
 }
 
-function buscarClase_(clases, salon, nowMin, minAntes) {
+/** Clase (o asesoría) que se puede registrar ahora. Si hay dos seguidas, prefiere la que aún no tiene registro. */
+function buscarClase_(clases, salon, nowMin, minAntes, registradas) {
   var v = clases.filter(function (c) { return nowMin >= c.iniMin - minAntes && nowMin < c.finMin; });
-  v.sort(function (a, b) { return Math.abs(nowMin - a.iniMin) - Math.abs(nowMin - b.iniMin); });
+  var r = registradas || {};
+  v.sort(function (a, b) { return (r[a.id] ? 1 : 0) - (r[b.id] ? 1 : 0) || Math.abs(nowMin - a.iniMin) - Math.abs(nowMin - b.iniMin); });
   return v[0] || null;
 }
 
@@ -430,6 +445,12 @@ function verificarInstalacion() {
 }
 
 function generarEnlaces() {
+  generarEnlaces_();
+  avisar_('Enlaces generados (columna H). Envíalos con la opción 3 o compártelos uno a uno. Mantén la hoja privada.');
+}
+
+/** Crea la clave del enlace solo a quien no la tiene (las existentes no cambian). */
+function generarEnlaces_() {
   var cfg = leerConfig_();
   var base = basePagina_(cfg);
   if (!base) throw new Error('Escribe primero en Config la "URL de la página (GitHub Pages)".');
@@ -439,7 +460,6 @@ function generarEnlaces() {
   var tokens = v.map(function (f) { return [f[5] || (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 32)]; });
   sh.getRange(2, 6, n, 1).setNumberFormat('@').setValues(tokens);
   sh.getRange(2, 8, n, 1).setValues(tokens.map(function (t) { return [base + '/?d=' + t[0]]; }));
-  avisar_('Enlaces generados (columna H). Envíalos con la opción 3 o compártelos uno a uno. Mantén la hoja privada.');
 }
 
 function enviarEnlaces() {
@@ -447,14 +467,32 @@ function enviarEnlaces() {
   hoja_('Docentes').getDataRange().getDisplayValues().slice(1).forEach(function (f) {
     if (!f[0] || up_(f[4]) === 'NO') return;
     if (!f[3] || !f[7]) { sin.push(f[1]); return; }
-    enviarCorreo_(f[3], 'Tu enlace personal de Pulso (asistencia docente)',
-      'Hola ' + f[1] + ',\n\nEste es tu enlace personal para registrar asistencia:\n' + f[7] +
-      '\n\nCómo usarlo:\n1. Ábrelo en tu celular y guárdalo en la pantalla de inicio (Chrome: ⋮ → Agregar a pantalla principal; Safari: Compartir → Agregar a inicio).\n' +
-      '2. Cuando estés en el salón, conéctate al WiFi de la universidad, activa la ubicación y abre el enlace.\n3. Toca "Registrar asistencia".\n\n' +
-      'El enlace queda vinculado al primer celular donde lo abras. No lo compartas.' + (cfg.correo ? '\n\nDudas: ' + cfg.correo : ''));
+    correoEnlace_(f, cfg);
     env++;
   });
   avisar_(env + ' correos enviados.' + (sin.length ? ' Sin correo o sin enlace: ' + sin.join(', ') : ''));
+}
+
+function correoEnlace_(f, cfg) {
+  enviarCorreo_(f[3], 'Tu enlace personal de Pulso (asistencia docente)',
+    'Hola ' + f[1] + ',\n\nEste es tu enlace personal para registrar asistencia a clases y asesorías:\n' + f[7] +
+    '\n\nCómo usarlo:\n1. Ábrelo en tu celular y guárdalo en la pantalla de inicio (Chrome: ⋮ → Agregar a pantalla principal; Safari: Compartir → Agregar a inicio).\n' +
+    '2. Cuando llegues al salón, conéctate al WiFi de la universidad, activa la ubicación y abre el enlace.\n3. Toca "Registrar asistencia".\n\n' +
+    'El enlace queda vinculado al primer celular donde lo abras. No lo compartas.' + (cfg.correo ? '\n\nDudas: ' + cfg.correo : ''));
+}
+
+/** Envía el enlace personal a UN docente (por código), sin reenviarlo a todos. */
+function enviarEnlaceUno() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Enviar enlace a un docente', 'Código del docente (columna A de Docentes):', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var cod = normalizarCodigo_(r.getResponseText()), cfg = leerConfig_();
+  generarEnlaces_();
+  var f = hoja_('Docentes').getDataRange().getDisplayValues().slice(1).filter(function (x) { return normalizarCodigo_(x[0]) === cod; })[0];
+  if (!f) return avisar_('No hay ningún docente con el código ' + cod + ' en la hoja Docentes.');
+  if (!f[3]) return avisar_('Escribe primero el correo de ' + f[1] + ' en la columna D de Docentes.');
+  correoEnlace_(f, cfg);
+  avisar_('Enlace enviado a ' + f[1] + ' (' + f[3] + ').');
 }
 
 function activarAutomatizacion() {
@@ -490,10 +528,10 @@ function recordatorioDiario() {
     if (!cod || up_(f[4]) === 'NO' || !correo || !clave || !clases) return;
     if (MailApp.getRemainingDailyQuota() < 3) { sinCupo.push(f[1]); return; }
     clases.sort(function (a, b) { return a.iniMin - b.iniMin; });
-    var lista = clases.map(function (c) { return '• ' + c.inicio + '–' + c.fin + '  ' + c.salon + '  ' + c.materia + ' (' + c.codMat + ')'; }).join('\n');
+    var lista = clases.map(function (c) { return '• ' + c.inicio + '–' + c.fin + '  ' + (c.asesoria ? c.materia + (c.salon ? ' (' + c.salon + ')' : '') : c.salon + '  ' + c.materia + ' (' + c.codMat + ')'); }).join('\n');
     var nombre = String(f[1]).split(' ').slice(-2).join(' ');
     enviarCorreo_(correo, 'Pulso · Tus clases de hoy, ' + dia.toLowerCase() + ' ' + fecha,
-      'Hola ' + nombre + ',\n\nHoy tienes ' + (clases.length === 1 ? 'esta clase' : 'estas clases') + ':\n' + lista +
+      'Hola ' + nombre + ',\n\nHoy tienes ' + (clases.length === 1 ? 'esta clase o asesoría' : 'estas clases y asesorías') + ':\n' + lista +
       '\n\nRegistra tu asistencia al llegar al salón (desde ' + cfg.minAntes + ' minutos antes del inicio):\n' +
       base + '/?d=' + clave +
       '\n\nRecuerda: conectado al WiFi de la UFPS y con la ubicación activada. Usa siempre el mismo celular.');
@@ -510,6 +548,149 @@ function recordatorioDiario() {
 /** Dirección pública de la página del docente: GitHub Pages (preferida) o el Worker. Sin "/" final. */
 function basePagina_(cfg) {
   return String(cfg.urlPagina || cfg.urlWorker || '').trim().replace(/\/+$/, '').replace(/\/index\.html$/, '');
+}
+
+// ---------------------------------------------------------------------------
+// ASESORÍAS
+// ---------------------------------------------------------------------------
+var HOJA_ASESORIAS = 'Asesorías';
+var COLS_ASESORIAS = ['ID clase', 'Día', 'Hora inicio', 'Hora fin', 'Código materia', 'Materia', 'Código docente', 'Docente', 'Salón', 'Programa'];
+
+/**
+ * Crea/llena la hoja Asesorías con el horario de asesorías 2026-2 (Ing. Electrónica e Ing. Electromecánica)
+ * y agrega a Docentes a quien no estaba. Después se edita la hoja directamente (por ejemplo, el Salón).
+ */
+function cargarAsesorias() {
+  var libro = SpreadsheetApp.getActive(), sh = libro.getSheetByName(HOJA_ASESORIAS);
+  if (sh && sh.getLastRow() > 1) {
+    try {
+      var ui = SpreadsheetApp.getUi();
+      if (ui.alert('Asesorías', 'La hoja Asesorías ya tiene datos. ¿Reemplazarlos por el horario 2026-2? (se pierden los salones que hayas escrito)', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+    } catch (e) { /* sin interfaz: se reemplaza */ }
+    sh.getRange(2, 1, sh.getLastRow() - 1, COLS_ASESORIAS.length).clearContent();
+  }
+  if (!sh) sh = libro.insertSheet(HOJA_ASESORIAS);
+  var filas = [COLS_ASESORIAS].concat(ASESORIAS_2026_2);
+  sh.getRange(1, 1, filas.length, COLS_ASESORIAS.length).setNumberFormat('@').setValues(filas);
+  try {
+    sh.getRange(1, 1, 1, COLS_ASESORIAS.length).setBackground(COLORES_UFPS.rojo).setFontColor('#ffffff').setFontWeight('bold');
+    sh.setFrozenRows(1);
+    [24, 11, 11, 10, 14, 34, 14, 40, 10, 30].forEach(function (w, i) { sh.setColumnWidth(i + 1, w * 7); });
+    sh.setTabColor(COLORES_UFPS.naranja);
+  } catch (e) { /* formato opcional */ }
+  // Docentes que solo tienen asesorías
+  var hd = hoja_('Docentes'), codigos = {}, nuevos = [];
+  hd.getDataRange().getDisplayValues().slice(1).forEach(function (f) { codigos[normalizarCodigo_(f[0])] = true; });
+  DOCENTES_NUEVOS_ASESORIAS.forEach(function (d) { if (!codigos[d[0]]) nuevos.push([d[0], d[1], '', '', 'SI', '', '', '']); });
+  if (nuevos.length) hd.getRange(hd.getLastRow() + 1, 1, nuevos.length, 8).setNumberFormat('@').setValues(nuevos);
+  if (basePagina_(leerConfig_())) generarEnlaces_();
+  avisar_(ASESORIAS_2026_2.length + ' asesorías cargadas en la hoja "Asesorías".' +
+    (nuevos.length ? '\n\nDocentes agregados a Docentes: ' + nuevos.map(function (d) { return d[1] + ' (' + d[0] + ')'; }).join(', ') +
+      '.\nEscribe su correo (columna D) y envíale el enlace con "Enviar enlace a un solo docente…".' : '') +
+    '\n\nCuando sepas en qué salón se dicta cada asesoría, escríbelo en la columna Salón: así aparece en el tablero de los becas trabajo.');
+}
+
+// ---------------------------------------------------------------------------
+// TABLERO DE SALONES (becas trabajo)
+// ---------------------------------------------------------------------------
+var CFG_CLAVE_TABLERO = 'Clave del tablero (becas trabajo)';
+var CFG_REFRESCO_TABLERO = 'Actualizar tablero cada (min)';
+var SECTORES = [['AG', 'Bloque AG'], ['LE', 'Bloque LE'], ['LG', 'Bloque LG'], ['OTROS', 'Otros salones'], ['ASESORIAS', 'Asesorías sin salón asignado']];
+
+/** Crea (una vez) la clave del tablero y muestra el enlace para los becas trabajo. */
+function enlaceTablero() {
+  var cfg = leerConfig_(), base = basePagina_(cfg);
+  if (!base) throw new Error('Escribe primero en Config la "URL de la página (GitHub Pages)".');
+  var clave = cfg.claveTablero;
+  if (!clave) { clave = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 24); ponerConfig_(CFG_CLAVE_TABLERO, clave); }
+  if (!cfg.refrescoTablero || cfg.refrescoTablero === 1) ponerConfig_(CFG_REFRESCO_TABLERO, cfg.refrescoTablero || 1);
+  var url = base + '/tablero.html?k=' + clave;
+  avisar_('Enlace del tablero de salones para los becas trabajo:\n\n' + url +
+    '\n\nÁbrelo en el celular o computador de cada beca. Muestra por bloque (AG, LE, LG) qué salón abrir y para qué docente.' +
+    '\nPara cambiar la clave (si el enlace se filtra), borra el valor "' + CFG_CLAVE_TABLERO + '" en Config y vuelve a usar esta opción.');
+  return url;
+}
+
+function ponerConfig_(clave, valor) {
+  var sh = hoja_('Config'), v = sh.getDataRange().getDisplayValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() === clave) { sh.getRange(i + 1, 2).setValue(valor); return; }
+  sh.getRange(sh.getLastRow() + 1, 1, 1, 2).setValues([[clave, valor]]);
+}
+
+/** Clases con asistencia registrada hoy: { id: { hora, estado } } */
+function registradasHoy_(fecha) {
+  var sh = hoja_('Asistencia'), m = {};
+  if (sh.getLastRow() < 2) return m;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues().forEach(function (f) {
+    if (f[0] === fecha && (f[12] === 'A tiempo' || f[12] === 'Tarde')) m[f[2]] = { hora: f[10], estado: f[12] };
+  });
+  return m;
+}
+
+/** Aperturas: Fecha, Hora, ID clase, Salón, Docente, Abierto por. */
+function aperturasHoy_(fecha) {
+  var sh = SpreadsheetApp.getActive().getSheetByName('Aperturas'), m = {};
+  if (!sh || sh.getLastRow() < 2) return m;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 6).getDisplayValues().forEach(function (f) { if (f[0] === fecha) m[f[2]] = { hora: f[1], por: f[5] }; });
+  return m;
+}
+
+function claveTableroOk_(p, cfg) { return !!cfg.claveTablero && String(p.clave || '') === cfg.claveTablero; }
+var TABLERO_NO_VALIDO = { ok: false, tipo: 'error', titulo: 'Enlace del tablero no válido', mensaje: 'Pide a la coordinación el enlace actualizado del tablero de salones.' };
+
+/**
+ * Lo que debe abrir cada beca: clases y asesorías de hoy que están en curso o empiezan en la próxima hora.
+ * estado: abrir (el docente ya registró) · abierto · esperando (aún no registra) · sin_registro (pasó la tolerancia) · proxima
+ */
+function apiTablero_(p, ahora) {
+  var cfg = leerConfig_();
+  if (!claveTableroOk_(p, cfg)) return TABLERO_NO_VALIDO;
+  var tz = cfg.tz, fecha = fmt_(ahora, tz, 'yyyy-MM-dd'), hora = fmt_(ahora, tz, 'HH:mm');
+  var cache = typeof CacheService !== 'undefined' ? CacheService.getScriptCache() : null, ck = 'tablero:' + fecha + hora;
+  if (cache) { var c = cache.get(ck); if (c) return JSON.parse(c); }
+  var dia = diaDe_(ahora, tz), nowMin = aMinutos_(hora);
+  var r = { ok: true, fecha: fecha, dia: dia, hora: hora, refrescarMin: cfg.refrescoTablero, habil: diaHabil_(fecha, cfg), sectores: [] };
+  var grupos = {};
+  SECTORES.forEach(function (s) { grupos[s[0]] = []; });
+  if (r.habil) {
+    var reg = registradasHoy_(fecha), abiertos = aperturasHoy_(fecha);
+    leerHorario_().forEach(function (c) {
+      if (c.dia !== dia || c.finMin <= nowMin || c.iniMin - 60 > nowMin) return;
+      var est;
+      if (reg[c.id]) est = abiertos[c.id] ? 'abierto' : 'abrir';
+      else if (nowMin < c.iniMin - cfg.minAntes) est = 'proxima';
+      else if (nowMin > c.iniMin + cfg.tolerancia) est = 'sin_registro';
+      else est = 'esperando';
+      var pre = c.salon.slice(0, 2), sector = !c.salon ? 'ASESORIAS' : (grupos[pre] && pre !== 'AS' ? pre : 'OTROS');
+      grupos[sector].push({ id: c.id, salon: c.salon, inicio: c.inicio, fin: c.fin, docente: c.docente, materia: c.materia,
+        asesoria: c.asesoria, estado: est, registro: reg[c.id] ? reg[c.id].hora.slice(0, 5) : '', abierto: abiertos[c.id] ? abiertos[c.id].hora.slice(0, 5) : '' });
+    });
+  }
+  var orden = { abrir: 0, esperando: 1, sin_registro: 2, proxima: 3, abierto: 4 };
+  SECTORES.forEach(function (s) {
+    var it = grupos[s[0]].sort(function (a, b) { return orden[a.estado] - orden[b.estado] || a.inicio.localeCompare(b.inicio) || a.salon.localeCompare(b.salon); });
+    if (it.length || s[0] === 'AG' || s[0] === 'LE' || s[0] === 'LG') r.sectores.push({ id: s[0], nombre: s[1], items: it });
+  });
+  if (cache) { try { cache.put(ck, JSON.stringify(r), 30); } catch (e) { /* respuesta muy grande */ } }
+  return r;
+}
+
+/** El beca marca que ya abrió el salón (queda en la hoja Aperturas). */
+function apiAbrir_(p, ahora) {
+  var cfg = leerConfig_();
+  if (!claveTableroOk_(p, cfg)) return TABLERO_NO_VALIDO;
+  var tz = cfg.tz, fecha = fmt_(ahora, tz, 'yyyy-MM-dd'), dia = diaDe_(ahora, tz);
+  var c = leerHorario_().filter(function (x) { return x.id === String(p.id || '') && x.dia === dia; })[0];
+  if (!c) return { ok: false, tipo: 'error', titulo: 'Clase no encontrada', mensaje: 'Actualiza el tablero.' };
+  var ab = aperturasHoy_(fecha);
+  if (!ab[c.id]) {
+    var libro = SpreadsheetApp.getActive(), sh = libro.getSheetByName('Aperturas');
+    if (!sh) { sh = libro.insertSheet('Aperturas'); sh.getRange(1, 1, 1, 6).setValues([['Fecha', 'Hora', 'ID clase', 'Salón', 'Docente', 'Abierto por']]); }
+    sh.getRange(sh.getLastRow() + 1, 1, 1, 6).setNumberFormat('@')
+      .setValues([[fecha, fmt_(ahora, tz, 'HH:mm:ss'), c.id, c.salon, c.docente, String(p.por || '').slice(0, 40)]]);
+  }
+  if (typeof CacheService !== 'undefined') CacheService.getScriptCache().remove('tablero:' + fecha + fmt_(ahora, tz, 'HH:mm'));
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -538,18 +719,26 @@ function leerConfig_() {
     minAntes: num('Minutos antes del inicio para registrar', 15), tolerancia: num('Tolerancia de llegada (min)', 10),
     alertas: si('Enviar alertas de no registro (SI/NO)', true),
     recordatorio: si('Recordatorio diario a docentes (SI/NO)', true),
+    claveTablero: String(m[CFG_CLAVE_TABLERO] || '').trim(),
+    refrescoTablero: Math.max(1, num(CFG_REFRESCO_TABLERO, 1)),
     inicio: fechaIso_(m['Fecha inicio de control']), fin: fechaIso_(m['Fecha fin de control'])
   };
 }
 
+/** Clases (hoja Horario) + asesorías (hoja Asesorías, si existe). Mismas columnas en las dos hojas. */
 function leerHorario_() {
-  var v = hoja_('Horario').getDataRange().getDisplayValues(), h = v[0].map(function (x) { return String(x).trim(); });
-  var ix = function (n) { var i = h.indexOf(n); if (i < 0) throw new Error('Falta la columna "' + n + '" en Horario'); return i; };
+  var ases = SpreadsheetApp.getActive().getSheetByName(HOJA_ASESORIAS);
+  return leerTablaHorario_(hoja_('Horario'), 'Horario', false).concat(ases ? leerTablaHorario_(ases, HOJA_ASESORIAS, true) : []);
+}
+
+function leerTablaHorario_(sh, nombre, asesoria) {
+  var v = sh.getDataRange().getDisplayValues(), h = v[0].map(function (x) { return String(x).trim(); });
+  var ix = function (n) { var i = h.indexOf(n); if (i < 0) throw new Error('Falta la columna "' + n + '" en ' + nombre); return i; };
   var I = { id: ix('ID clase'), dia: ix('Día'), ini: ix('Hora inicio'), fin: ix('Hora fin'), cm: ix('Código materia'), mat: ix('Materia'), cd: ix('Código docente'), doc: ix('Docente'), sal: ix('Salón') };
-  return v.slice(1).filter(function (f) { return f[I.id]; }).map(function (f) {
+  return v.slice(1).filter(function (f) { return f[I.id] && f[I.ini] && f[I.fin]; }).map(function (f) {
     var ini = hhmm_(f[I.ini]), fin = hhmm_(f[I.fin]);
     return { id: f[I.id], dia: f[I.dia].trim(), inicio: ini, fin: fin, iniMin: aMinutos_(ini), finMin: aMinutos_(fin), codMat: f[I.cm],
-      materia: f[I.mat], codDoc: normalizarCodigo_(f[I.cd]), docente: f[I.doc], salon: up_(f[I.sal]) };
+      materia: f[I.mat], codDoc: normalizarCodigo_(f[I.cd]), docente: f[I.doc], salon: up_(f[I.sal]), asesoria: asesoria || up_(f[I.cm]) === 'ASESORIA' };
   });
 }
 
